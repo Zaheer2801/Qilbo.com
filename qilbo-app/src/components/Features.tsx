@@ -18,36 +18,48 @@ export default function Features() {
       icon: ShoppingCart,
       title: "Touchscreen POS Register & 21+ ID Check",
       body: "Lightning-fast barcode scanner, quick key grid, automatic age verification alerts for liquor/tobacco, digital receipts, and split payments.",
+      img: "https://images.unsplash.com/photo-1556742049-0a67e5108620?auto=format&fit=crop&w=1200&q=80",
+      badge: "Real-time Register Sync",
     },
     {
       n: "02",
       icon: Bot,
       title: "AI Inventory Auditing & CSV Batch Import",
       body: "Track every bottle, case, and SKU. Bulk import product catalogs via CSV and enrich product photos with AI automatic background removal.",
+      img: "https://images.unsplash.com/photo-1510812431401-41d2bd2722f3?auto=format&fit=crop&w=1200&q=80",
+      badge: "AI Image Extraction",
     },
     {
       n: "03",
       icon: Truck,
       title: "Distributor Receiving & PO Management",
       body: "Scan distributor invoices from Southern Glazer's, Breakthru, and local wholesalers. Automated reorders based on sales velocity.",
+      img: "https://images.unsplash.com/photo-1586528116311-ad8dd3c8310d?auto=format&fit=crop&w=1200&q=80",
+      badge: "Invoice OCR Matcher",
     },
     {
       n: "04",
       icon: Sparkles,
       title: "UberEats, DoorDash & Local Web Sync",
       body: "Centralized multi-channel order dispatch. Sync local web store and delivery app orders directly with your main store inventory.",
+      img: "https://images.unsplash.com/photo-1526304640581-d334cdbbf45e?auto=format&fit=crop&w=1200&q=80",
+      badge: "Multi-App Delivery",
     },
     {
       n: "05",
       icon: TrendingUp,
       title: "Dynamic Pricing & Margin Protection",
       body: "Set category-aware minimum profit margin guardrails. Automated alerts when distributor price increases threaten your profits.",
+      img: "https://images.unsplash.com/photo-1567696911980-2eed69a46042?auto=format&fit=crop&w=1200&q=80",
+      badge: "38.4% Margin Guardrail",
     },
     {
       n: "06",
       icon: Clock,
       title: "Expiry Tracking & Low Stock Alerts",
       body: "Track batch expiration dates for craft beers and food items. Receive automated notifications before stock runs out or products expire.",
+      img: "https://images.unsplash.com/photo-1516594915697-87eb3b1c14ea?auto=format&fit=crop&w=1200&q=80",
+      badge: "Expiry & Stock Alert",
     },
   ];
 
@@ -116,29 +128,47 @@ export default function Features() {
             })}
           </div>
 
-          {/* Right Column Visual Panel (6 cols) */}
+          {/* Right Column Visual Panel with Real Photography & UI Overlays (6 cols) */}
           <div className="lg:col-span-6 relative">
-            <div className="bg-slate-900 border border-slate-800 rounded-3xl p-8 shadow-2xl min-h-[420px] flex flex-col justify-center items-center text-center relative overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-br from-amber-500/10 via-transparent to-orange-500/10 pointer-events-none" />
+            <div className="relative bg-slate-900 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl min-h-[460px] group">
+              <img
+                src={featuresList[active].img}
+                alt={featuresList[active].title}
+                className="w-full h-[460px] object-cover object-center transform group-hover:scale-105 transition-transform duration-700 brightness-75"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-slate-950/40 to-transparent pointer-events-none" />
               
-              <div className="w-16 h-16 rounded-2xl bg-amber-500/20 text-amber-400 flex items-center justify-center mb-6 border border-amber-500/40 shadow-lg shadow-amber-500/20">
-                {React.createElement(featuresList[active].icon, { className: "w-8 h-8" })}
-              </div>
+              {/* Glassmorphic UI Overlay Card */}
+              <div className="absolute bottom-6 left-6 right-6 p-6 rounded-2xl bg-slate-950/80 border border-slate-800 backdrop-blur-xl space-y-3 shadow-2xl">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <div className="w-10 h-10 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center border border-amber-500/40">
+                      {React.createElement(featuresList[active].icon, { className: "w-5 h-5" })}
+                    </div>
+                    <div>
+                      <span className="text-[10px] font-mono uppercase font-bold text-amber-400 tracking-wider">
+                        Feature {featuresList[active].n} / 06
+                      </span>
+                      <h3 className="text-base font-extrabold text-white">
+                        {featuresList[active].title}
+                      </h3>
+                    </div>
+                  </div>
+                  <span className="text-[11px] font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-2.5 py-1 rounded-full">
+                    {featuresList[active].badge}
+                  </span>
+                </div>
 
-              <span className="text-sm font-mono font-bold text-amber-400 uppercase tracking-widest mb-2">
-                Feature {featuresList[active].n} of 06
-              </span>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  {featuresList[active].body}
+                </p>
 
-              <h3 className="text-xl sm:text-2xl font-extrabold text-white max-w-md">
-                {featuresList[active].title}
-              </h3>
-
-              <p className="text-xs sm:text-sm text-slate-300 max-w-md mt-3 leading-relaxed">
-                {featuresList[active].body}
-              </p>
-
-              <div className="mt-8 flex items-center gap-2 text-xs font-semibold text-emerald-400 bg-emerald-500/10 border border-emerald-500/20 px-3 py-1.5 rounded-full">
-                <CheckCircle2 className="w-4 h-4" /> Live Interactive Demo Available in App Mode
+                <div className="pt-1 flex items-center justify-between border-t border-slate-800/80 text-[11px] text-slate-400">
+                  <span className="flex items-center gap-1 text-emerald-400 font-medium">
+                    <CheckCircle2 className="w-3.5 h-3.5" /> High Precision Qilbo Engine
+                  </span>
+                  <span className="font-mono text-amber-400">Status: Active</span>
+                </div>
               </div>
             </div>
           </div>

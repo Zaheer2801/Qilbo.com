@@ -81,24 +81,33 @@ export default function Hero({ onGetStarted, onOpenPOS }: HeroProps) {
           </div>
         </div>
 
-        {/* Right Column: Dynamic Interactive UI Mockup (5 cols) */}
+        {/* Right Column: Dynamic Interactive UI Mockup & Photo Terminal (5 cols) */}
         <div className="lg:col-span-5 relative">
           <div className="absolute -inset-1 rounded-3xl bg-gradient-to-r from-amber-500/30 to-orange-500/30 blur-xl opacity-75 animate-pulse" />
           
-          <div className="relative bg-slate-900/90 border border-slate-800 rounded-3xl p-5 shadow-2xl backdrop-blur-xl space-y-4">
-            {/* Header */}
-            <div className="flex justify-between items-center pb-3 border-b border-slate-800">
-              <div className="flex items-center gap-2">
-                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-ping" />
-                <span className="text-xs font-bold text-slate-300">Live Register Terminal</span>
+          <div className="relative bg-slate-900/90 border border-slate-800 rounded-3xl overflow-hidden shadow-2xl backdrop-blur-xl space-y-4">
+            {/* Real Hardware Terminal Photography Header */}
+            <div className="relative h-44 overflow-hidden group">
+              <img
+                src="https://images.unsplash.com/photo-1556742049-0a67e5108620?auto=format&fit=crop&w=1200&q=80"
+                alt="Qilbo POS Terminal Checkout"
+                className="w-full h-full object-cover transform group-hover:scale-105 transition-transform duration-700 brightness-90"
+              />
+              <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/30 to-transparent" />
+              
+              <div className="absolute top-3 left-3 right-3 flex justify-between items-center">
+                <div className="flex items-center gap-2 bg-slate-950/80 backdrop-blur-md px-3 py-1 rounded-full border border-slate-800">
+                  <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
+                  <span className="text-[11px] font-bold text-white">Qilbo Register Terminal</span>
+                </div>
+                <span className="text-[10px] uppercase font-mono font-bold text-amber-400 bg-amber-500/20 backdrop-blur-md px-2.5 py-1 rounded-full border border-amber-500/30">
+                  Store ID: #8492
+                </span>
               </div>
-              <span className="text-[10px] uppercase font-bold text-amber-400 bg-amber-500/10 px-2 py-0.5 rounded-full">
-                Store ID: #8492
-              </span>
             </div>
 
             {/* Quick Live Preview Cards */}
-            <div className="space-y-3">
+            <div className="px-5 pb-5 space-y-3">
               <div className="p-3 bg-slate-950/80 border border-slate-800/80 rounded-xl flex items-center justify-between">
                 <div className="flex items-center gap-3">
                   <div className="p-2 bg-amber-500/10 text-amber-400 rounded-lg">
@@ -139,15 +148,15 @@ export default function Hero({ onGetStarted, onOpenPOS }: HeroProps) {
                 </div>
                 <span className="text-xs font-bold text-slate-300">Active</span>
               </div>
-            </div>
 
-            {/* Live Performance Meter */}
-            <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
-              <div className="flex items-center gap-1.5 text-slate-400">
-                <TrendingUp className="w-4 h-4 text-emerald-400" />
-                <span>Today's Store Sales:</span>
+              {/* Live Performance Meter */}
+              <div className="pt-2 border-t border-slate-800/80 flex items-center justify-between text-xs">
+                <div className="flex items-center gap-1.5 text-slate-400">
+                  <TrendingUp className="w-4 h-4 text-emerald-400" />
+                  <span>Today's Store Sales:</span>
+                </div>
+                <span className="font-extrabold text-white text-sm">$4,892.50</span>
               </div>
-              <span className="font-extrabold text-white text-sm">$4,892.50</span>
             </div>
           </div>
         </div>
