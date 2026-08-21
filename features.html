@@ -144,69 +144,17 @@ _hsq.push(['setTrackingGate', 'AnalyticsTracking:InitialUrlQueryParamMerging']);
 </script><meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"></head><body>
 
 <!-- Qilbo Full-Screen Logo Intro Animation -->
-<div id="qilbo-intro-overlay" style="position: fixed; inset: 0; width: 100vw; height: 100vh; background: #06080F; z-index: 999999; display: flex; flex-direction: column; align-items: center; justify-content: center; opacity: 1; transition: opacity 0.8s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden;">
-  
-  <!-- Ambient Radial Light Halo -->
-  <div style="position: absolute; width: 500px; height: 500px; border-radius: 50%; background: radial-gradient(circle, rgba(255, 94, 0, 0.28) 0%, rgba(255, 168, 0, 0.08) 45%, rgba(6, 8, 15, 0) 75%); filter: blur(40px); animation: introPulse 2s ease-in-out infinite alternate;"></div>
-
-  <div style="position: relative; display: flex; flex-direction: column; align-items: center; text-align: center; gap: 16px; animation: introScaleUp 1.2s cubic-bezier(0.16, 1, 0.3, 1) forwards;">
-    
-    <!-- Official Qilbo Animated Emblem -->
-    <div style="width: 140px; height: 140px; position: relative;">
-      <svg viewBox="0 0 200 200" fill="none" xmlns="http://www.w3.org/2000/svg" style="width: 100%; height: 100%; filter: drop-shadow(0px 0px 24px rgba(255, 94, 0, 0.65));">
-        <defs>
-          <linearGradient id="introQGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#FFD000" />
-            <stop offset="45%" stop-color="#FF5E00" />
-            <stop offset="100%" stop-color="#FF2A00" />
-          </linearGradient>
-          <linearGradient id="introBagGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-            <stop offset="0%" stop-color="#FFA800" />
-            <stop offset="100%" stop-color="#FF4500" />
-          </linearGradient>
-        </defs>
-
-        <!-- Outer Crescent Ring Q -->
-        <path d="M 100 20 A 75 75 0 1 0 162 145 L 172 165 C 175 170 168 175 163 170 L 138 152 A 75 75 0 0 0 100 20 Z" fill="url(#introQGrad)" />
-        <circle cx="96" cy="92" r="52" fill="#06080F" />
-
-        <!-- Shopping Bag Inside Q -->
-        <path d="M 80 80 H 124 C 127 80 129 83 128.5 86 L 122 136 C 121.5 139 119.5 141 116.5 141 H 87.5 C 84.5 141 82.5 139 82 136 L 75.5 86 C 75 83 77 80 80 80 Z" fill="url(#introBagGrad)" />
-        <path d="M 89 80 V 68 C 89 62 93 57 102 57 C 111 57 115 62 115 68 V 80" stroke="url(#introBagGrad)" stroke-width="7" stroke-linecap="round" fill="none" />
-        
-        <!-- Bag Inner Accent Slots -->
-        <rect x="91" y="98" width="22" height="4" rx="2" fill="#06080F" />
-        <rect x="95" y="107" width="14" height="3.5" rx="1.75" fill="#06080F" />
-        
-        <!-- Bottom Ribbon Tail -->
-        <path d="M 83 135 C 95 135 110 160 145 158 C 158 157 165 146 168 138 C 160 148 148 150 135 145 C 118 138 100 135 83 135 Z" fill="url(#introQGrad)" />
-      </svg>
-    </div>
-
-    <!-- Animated Qilbo Typography -->
-    <div style="display: flex; flex-direction: column; align-items: center; gap: 4px;">
-      <div style="display: flex; align-items: center; font-size: 56px; font-weight: 900; color: #FFFFFF; font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif; letter-spacing: -1.5px; line-height: 1;">
-        Q<span style="position: relative; display: inline-block;">i<span style="position: absolute; top: 10px; left: 50%; transform: translateX(-50%); width: 9px; height: 9px; background: #FF5E00; border-radius: 2px; box-shadow: 0 0 10px #FF5E00;"></span></span>lbo
-      </div>
-      <div style="font-size: 11px; font-weight: 800; color: rgba(255, 255, 255, 0.7); text-transform: uppercase; letter-spacing: 4px; font-family: 'JetBrains Mono', monospace; margin-top: 4px; animation: introFadeIn 1.5s ease forwards 0.3s; opacity: 0;">
-        POINT-OF-SALE FOR INDEPENDENT RETAILERS
-      </div>
-    </div>
+<!-- Sleek Fast Qilbo Logo Intro Overlay -->
+<div id="qilbo-intro-overlay" style="position: fixed; inset: 0; width: 100vw; height: 100vh; background: #06080F; z-index: 999999; display: flex; align-items: center; justify-content: center; opacity: 1; transition: opacity 0.6s cubic-bezier(0.16, 1, 0.3, 1); overflow: hidden; pointer-events: none;">
+  <div style="position: relative; display: flex; flex-direction: column; align-items: center; animation: introPop 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards;">
+    <img src="/qilbo-stacked.png" alt="Qilbo Logo" style="height: 180px; width: auto; filter: drop-shadow(0 0 30px rgba(255, 94, 0, 0.5)); border-radius: 12px;" />
   </div>
 </div>
 
 <style>
-  @keyframes introScaleUp {
-    0% { transform: scale(0.75); opacity: 0; filter: blur(10px); }
+  @keyframes introPop {
+    0% { transform: scale(0.82); opacity: 0; filter: blur(8px); }
     100% { transform: scale(1); opacity: 1; filter: blur(0px); }
-  }
-  @keyframes introPulse {
-    0% { transform: scale(0.9); opacity: 0.6; }
-    100% { transform: scale(1.1); opacity: 1; }
-  }
-  @keyframes introFadeIn {
-    0% { opacity: 0; transform: translateY(8px); }
-    100% { opacity: 0.8; transform: translateY(0); }
   }
 </style>
 
@@ -218,8 +166,8 @@ _hsq.push(['setTrackingGate', 'AnalyticsTracking:InitialUrlQueryParamMerging']);
         overlay.style.opacity = '0';
         setTimeout(function () {
           overlay.style.display = 'none';
-        }, 800);
-      }, 2200);
+        }, 600);
+      }, 1200);
     }
   });
 </script>
