@@ -354,7 +354,87 @@ _hsq.push(['setTrackingGate', 'AnalyticsTracking:InitialUrlQueryParamMerging']);
   setTimeout(function () {
     document.documentElement.classList.remove('gsap-init');
   }, 2000);
-</script><meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"></head><body><div class="page-wrapper"><div class="hide"><div class="global-styles w-embed"><style>
+</script><meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --font-heading: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
+    --font-body: 'Inter', system-ui, -apple-system, sans-serif;
+    --font-mono: 'JetBrains Mono', monospace;
+    --color-bg-dark: #070A11;
+    --color-card-dark: #0F172A;
+    --color-primary: #0047AB;
+    --color-primary-glow: #2563EB;
+    --color-accent-amber: #FF5E00;
+  }
+  
+  body, html {
+    font-family: var(--font-body) !important;
+    background-color: var(--color-bg-dark) !important;
+    color: #F8FAFC !important;
+  }
+  
+  h1, h2, h3, h4, h5, h6, .heading-56px, .heading-48px, .heading-32px, .heading-24px, .heading-20px {
+    font-family: var(--font-heading) !important;
+    letter-spacing: -0.02em !important;
+  }
+  
+  /* CoreBridge Navbar Glassmorphism */
+  .nav-wrapper {
+    background: rgba(7, 10, 17, 0.85) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+  
+  /* CoreBridge Hero Grid & Ambient Background */
+  .home-header_section {
+    background-color: #070A11 !important;
+    background-image: radial-gradient(circle at 50% 0%, rgba(37, 99, 235, 0.18) 0%, rgba(255, 94, 0, 0.12) 40%, rgba(7, 10, 17, 0) 80%),
+                      linear-gradient(to right, rgba(255, 255, 255, 0.03) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(255, 255, 255, 0.03) 1px, transparent 1px) !important;
+    background-size: 100% 100%, 48px 48px, 48px 48px !important;
+  }
+
+  /* CoreBridge Card Styling */
+  .feature-card, .home-support-block, .accordion, .home-header_component, .pre-footer_layout {
+    background: rgba(15, 23, 42, 0.75) !important;
+    border: 1px solid rgba(255, 255, 255, 0.08) !important;
+    border-radius: 20px !important;
+    backdrop-filter: blur(12px) !important;
+    transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .feature-card:hover, .home-support-block:hover {
+    border-color: rgba(37, 99, 235, 0.4) !important;
+    box-shadow: 0 20px 40px -15px rgba(37, 99, 235, 0.2) !important;
+    transform: translateY(-4px) !important;
+  }
+
+  /* CoreBridge Button Styling */
+  .button, .button.is-secondary {
+    background: linear-gradient(135deg, #0047AB 0%, #2563EB 50%, #FF5E00 100%) !important;
+    border-radius: 12px !important;
+    box-shadow: 0 10px 25px -5px rgba(37, 99, 235, 0.4) !important;
+    font-family: var(--font-heading) !important;
+    font-weight: 700 !important;
+    transition: transform 0.2s ease, box-shadow 0.2s ease !important;
+  }
+
+  .button:hover {
+    transform: translateY(-2px) scale(1.02) !important;
+    box-shadow: 0 15px 30px -5px rgba(37, 99, 235, 0.6) !important;
+  }
+
+  .footer {
+    background-color: #04060A !important;
+    border-top: 1px solid rgba(255, 255, 255, 0.08) !important;
+  }
+</style>
+
+</head><body><div class="page-wrapper"><div class="hide"><div class="global-styles w-embed"><style>
   html {
     font-size: 16px;
   }
