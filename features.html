@@ -141,7 +141,95 @@ _hsq.push(['setTrackingGate', 'AnalyticsTracking:InitialUrlQueryParamMerging']);
   setTimeout(function () {
     document.documentElement.classList.remove('gsap-init');
   }, 2000);
-</script><meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1"></head><body>
+</script><meta name="robots" content="index, follow, max-image-preview:large, max-snippet:-1, max-video-preview:-1">
+<style id="qilbo-rustic-theme">
+  :root {
+    --bg-rustic: #120E0C !important;
+    --card-rustic: #1D1714 !important;
+    --border-rustic: rgba(230, 138, 0, 0.14) !important;
+    --text-primary: #F7F1E5 !important;
+    --text-muted: #C5B9A8 !important;
+    --accent-amber: #E68A00 !important;
+    --accent-cognac: #C86428 !important;
+    --accent-gold: #FFB338 !important;
+  }
+
+  body, html {
+    background-color: #120E0C !important;
+    color: #F7F1E5 !important;
+    font-family: 'Inter', system-ui, sans-serif !important;
+  }
+
+  h1, h2, h3, h4, h5, h6, .heading-56px, .heading-48px, .heading-32px, .heading-24px {
+    color: #F7F1E5 !important;
+    font-family: 'Plus Jakarta Sans', system-ui, sans-serif !important;
+  }
+
+  /* Rich Rustic Hero Background & Glow */
+  .home-header_section, .background-color-whiterock {
+    background-color: #120E0C !important;
+    background-image: radial-gradient(circle at 50% 0%, rgba(230, 138, 0, 0.22) 0%, rgba(200, 100, 40, 0.12) 45%, rgba(18, 14, 12, 0) 80%),
+                      linear-gradient(to right, rgba(247, 241, 229, 0.02) 1px, transparent 1px),
+                      linear-gradient(to bottom, rgba(247, 241, 229, 0.02) 1px, transparent 1px) !important;
+    background-size: 100% 100%, 40px 40px, 40px 40px !important;
+  }
+
+  /* Glassmorphic Rustic Navbar */
+  .nav-wrapper {
+    background: rgba(18, 14, 12, 0.9) !important;
+    backdrop-filter: blur(16px) !important;
+    -webkit-backdrop-filter: blur(16px) !important;
+    border-bottom: 1px solid rgba(230, 138, 0, 0.15) !important;
+  }
+
+  /* Premium Rustic Cards */
+  .feature-card, .home-support-block, .accordion, .pre-footer_layout, .faq_layout {
+    background: #1D1714 !important;
+    border: 1px solid rgba(230, 138, 0, 0.16) !important;
+    border-radius: 20px !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.35) !important;
+    transition: all 0.35s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  }
+
+  .feature-card:hover, .home-support-block:hover, .accordion:hover {
+    border-color: rgba(255, 179, 56, 0.45) !important;
+    box-shadow: 0 20px 45px -10px rgba(230, 138, 0, 0.3) !important;
+    transform: translateY(-5px) !important;
+  }
+
+  /* Rich Amber & Cognac Buttons */
+  .button, .button.is-secondary {
+    background: linear-gradient(135deg, #E68A00 0%, #C86428 100%) !important;
+    border-radius: 12px !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 8px 24px -4px rgba(230, 138, 0, 0.45) !important;
+    font-weight: 700 !important;
+    transition: transform 0.25s ease, box-shadow 0.25s ease !important;
+  }
+
+  .button:hover {
+    transform: translateY(-2px) scale(1.03) !important;
+    box-shadow: 0 14px 35px -4px rgba(255, 179, 56, 0.6) !important;
+  }
+
+  /* Footer Styling */
+  .footer {
+    background-color: #0A0806 !important;
+    border-top: 1px solid rgba(230, 138, 0, 0.15) !important;
+  }
+
+  /* Human Character Badge Animations */
+  @keyframes characterFloat {
+    0%, 100% { transform: translateY(0px) rotate(0deg); }
+    50% { transform: translateY(-8px) rotate(1.5deg); }
+  }
+
+  .human-character-badge {
+    animation: characterFloat 4.5s ease-in-out infinite;
+  }
+</style>
+
+</head><body>
 
 <!-- Qilbo Full-Screen Logo Intro Animation -->
 <!-- Sleek Fast Qilbo Logo Intro Overlay -->
