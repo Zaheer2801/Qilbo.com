@@ -1,0 +1,634 @@
+// Discount Liquor – Cloudflare Worker Entry & API Router
+import {
+  inventory,
+  salesSummary,
+  ledger,
+  searchProducts,
+  setCount,
+  adjust,
+  todayLocal,
+  addDays,
+  setSetting,
+  distributorOrderSuggestions,
+  stockFor
+} from './db.js';
+import {
+  ingestSalesCsv,
+  dateFromFilename,
+  stageInvoice,
+  postInvoice
+} from './ingest.js';
+import { askAssistant, extractInvoice } from './ai.js';
+import {
+  handleUpdate,
+  send,
+  formatSales,
+  esc,
+  undo,
+  invoicePreview,
+  pname,
+  money
+} from './telegram.js';
+
+const json = (data, status = 200) => new Response(JSON.stringify(data), {
+  status,
+  headers: {
+    'content-type': 'application/json; charset=utf-8',
+    'access-control-allow-origin': '*',
+    'access-control-allow-headers': 'content-type, x-ingest-key',
+    'access-control-allow-methods': 'GET, POST, OPTIONS'
+  }
+});
+
+export default {
+  async fetch(req, env, ctx) {
+    const url = new URL(req.url);
+    const p = url.pathname;
+
+    // Handle CORS preflight
+    if (req.method === 'OPTIONS') {
+      return new Response(null, {
+        headers: {
+          'access-control-allow-origin': '*',
+          'access-control-allow-headers': 'content-type, x-ingest-key',
+          'access-control-allow-methods': 'GET, POST, OPTIONS'
+        }
+      });
+    }
+
+    try {
+      // 1. Telegram Webhook
+      if (p === '/telegram' && req.method === 'POST') {
+        if (req.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_WEBHOOK_SECRET) {
+          return new Response('Unauthorized', { status: 401 });
+        }
+        const update = await req.json();
+        ctx.waitUntil(handleUpdate(env, update, ctx).catch(e => console.error('Telegram update error:', e)));
+        return new Response('ok');
+      }
+
+      // 2. Ingest Sales CSV (Push from Google Apps Script)
+      if (p === '/ingest/sales' && req.method === 'POST') {
+        if (req.headers.get('x-ingest-key') !== env.INGEST_KEY) {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        const fileName = url.searchParams.get('file') || '';
+        const date = url.searchParams.get('date') || dateFromFilename(fileName);
+        const csvContent = await req.text();
+        const res = await ingestSalesCsv(env.DB, csvContent, date, fileName);
+
+        if (url.searchParams.get('notify') !== '0' && env.OWNER_CHAT_ID) {
+          ctx.waitUntil(
+            salesSummary(env.DB, date, date).then(s =>
+              send(env, env.OWNER_CHAT_ID, '📊 <b>New daily report loaded</b>\n' + formatSales(s))
+            )
+          );
+        }
+        return json(res);
+      }
+
+      // 3. Ingest Distributor Invoice (Push from Google Apps Script)
+      if (p === '/ingest/invoice' && req.method === 'POST') {
+        if (req.headers.get('x-ingest-key') !== env.INGEST_KEY) {
+          return json({ error: 'unauthorized' }, 401);
+        }
+        const ct = req.headers.get('content-type') || '';
+        let inv, key = null;
+
+        if (ct.includes('application/json')) {
+          inv = await req.json();
+        } else {
+          if (!env.GEMINI_API_KEY) return json({ error: 'Gemini AI not configured' }, 400);
+          const bytes = new Uint8Array(await req.arrayBuffer());
+          const fileName = url.searchParams.get('file') || `invoice_${Date.now()}.pdf`;
+          key = `invoices/${todayLocal()}/${Date.now()}_${fileName.replace(/[^\w.-]/g, '_')}`;
+          if (env.FILES) {
+            await env.FILES.put(key, bytes, { httpMetadata: { contentType: ct || 'application/pdf' } });
+          }
+          inv = await extractInvoice(env, bytes, ct.split(';')[0] || 'application/pdf');
+          if (url.searchParams.get('distributor')) inv.distributor = url.searchParams.get('distributor');
+        }
+
+        const st = await stageInvoice(env.DB, inv, {
+          file_key: key,
+          source: url.searchParams.get('source') || 'email'
+        });
+
+        // Always ask owner before saving to inventory
+        if (!st.duplicate && env.OWNER_CHAT_ID) {
+          ctx.waitUntil(
+            send(env, env.OWNER_CHAT_ID, '📧 <b>New invoice received</b>\n' + invoicePreview(st), {
+              reply_markup: {
+                inline_keyboard: [[
+                  { text: '✅ Save to inventory', callback_data: 'post:' + st.id },
+                  { text: '❌ Discard', callback_data: 'drop:' + st.id }
+                ]]
+              }
+            })
+          );
+        }
+        return json(st);
+      }
+
+      // 4. Authentication: Login & Logout
+      if (p === '/login' && req.method === 'POST') {
+        let password = '';
+        const ct = req.headers.get('content-type') || '';
+        if (ct.includes('application/json')) {
+          const body = await req.json();
+          password = body.password;
+        } else {
+          const form = await req.formData();
+          password = form.get('password');
+        }
+
+        if (!env.DASHBOARD_PASSWORD || password !== env.DASHBOARD_PASSWORD) {
+          if (ct.includes('application/json')) {
+            return json({ error: 'invalid password' }, 401);
+          }
+          return Response.redirect(url.origin + '/?bad=1', 303);
+        }
+
+        const token = await sign(env, String(Date.now() + 30 * 864e5));
+        const cookieHeader = `dl=${token}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=2592000`;
+
+        if (ct.includes('application/json')) {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json', 'set-cookie': cookieHeader }
+          });
+        }
+        return new Response(null, {
+          status: 303,
+          headers: { location: '/', 'set-cookie': cookieHeader }
+        });
+      }
+
+      if (p === '/logout') {
+        const cookieHeader = 'dl=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0';
+        if (req.headers.get('accept')?.includes('application/json')) {
+          return new Response(JSON.stringify({ ok: true }), {
+            status: 200,
+            headers: { 'content-type': 'application/json', 'set-cookie': cookieHeader }
+          });
+        }
+        return new Response(null, {
+          status: 303,
+          headers: { location: '/', 'set-cookie': cookieHeader }
+        });
+      }
+
+      // 5. Auth verification for protected API & Web UI
+      const authed = await checkCookie(env, req);
+
+      // Protected API Endpoints
+      if (p.startsWith('/api/')) {
+        if (!authed) return json({ error: 'login required' }, 401);
+        return await handleApi(req, env, url, ctx);
+      }
+
+      // Serve UI: If static assets bound, use ASSETS fetcher
+      if (env.ASSETS) {
+        if (!authed && (p === '/' || p === '/index.html')) {
+          return new Response(loginPage(url.searchParams.has('bad')), {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-frame-options': 'DENY' }
+          });
+        }
+        const assetRes = await env.ASSETS.fetch(req);
+        if (assetRes.status !== 404) return assetRes;
+      }
+
+      // Fallback dashboard view if static assets not yet bundled into worker
+      if (p === '/' || p === '/index.html') {
+        if (!authed) {
+          return new Response(loginPage(url.searchParams.has('bad')), {
+            headers: { 'content-type': 'text/html; charset=utf-8', 'x-frame-options': 'DENY' }
+          });
+        }
+        return new Response(dashboardShellHtml(), {
+          headers: { 'content-type': 'text/html; charset=utf-8', 'x-frame-options': 'DENY' }
+        });
+      }
+
+      return new Response('Not found', { status: 404 });
+    } catch (err) {
+      console.error('Worker request error:', err);
+      return json({ error: String(err.message || err) }, 500);
+    }
+  },
+
+  // Scheduled Cron Jobs
+  async scheduled(event, env, ctx) {
+    if (!env.OWNER_CHAT_ID) return;
+
+    // Check silent window: Eustis FL is America/New_York (silent between 10 PM and 8 AM)
+    const nowHour = Number(new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      hour: 'numeric',
+      hour12: false
+    }).format(new Date()));
+
+    if (nowHour < 8 || nowHour >= 22) {
+      console.log(`Silent window active (hour ${nowHour}), skipping notifications.`);
+      return;
+    }
+
+    const today = todayLocal();
+    const yesterday = addDays(today, -1);
+    const sameDayLastWeek = addDays(yesterday, -7);
+
+    // Sales comparison: Yesterday vs same weekday last week
+    const ySales = await salesSummary(env.DB, yesterday, yesterday);
+    const lastWeekSales = await salesSummary(env.DB, sameDayLastWeek, sameDayLastWeek);
+
+    // Low stock / out of stock
+    const inv = await inventory(env.DB, { onlyTracked: true });
+    const low = inv.filter(r => r.status === 'OUT' || r.status === 'REORDER');
+
+    // Pending invoices
+    const pend = await env.DB.prepare("SELECT COUNT(*) n FROM invoices WHERE status='pending'").first();
+
+    // Check if Monday 9:30 AM weekly report
+    const dayOfWeek = new Date(today + 'T12:00:00Z').getUTCDay(); // 1 = Monday
+    if (dayOfWeek === 1 && nowHour === 9) {
+      const weekStart = addDays(yesterday, -6);
+      const weekSales = await salesSummary(env.DB, weekStart, yesterday);
+      const deadStock = inv.filter(r => r.status === 'NOT SELLING');
+      const needCount = inv.filter(r => r.needs_count);
+
+      let weeklyMsg = `📈 <b>Weekly Summary (${weekStart} → ${yesterday})</b>\n`;
+      weeklyMsg += `Total Store Sales: <b>${money(weekSales.store_sales)}</b>\n`;
+      if (weekSales.tracked_margin != null) {
+        weeklyMsg += `Tracked Profit: ${money(weekSales.tracked_profit)} (${(weekSales.tracked_margin * 100).toFixed(0)}% margin)\n`;
+      }
+      if (weekSales.top_shelf?.amount) {
+        weeklyMsg += `Top Shelf: ${money(weekSales.top_shelf.amount)} (${(weekSales.top_shelf.share * 100).toFixed(0)}%)\n`;
+      }
+      if (weekSales.top_items.length) {
+        weeklyMsg += `\n<b>Top 5 Best Sellers:</b>\n` +
+          weekSales.top_items.slice(0, 5).map(it => `• ${esc(it.name)} ×${it.qty} (${money(it.amount)})`).join('\n') + '\n';
+      }
+      if (deadStock.length) {
+        weeklyMsg += `\n⚠️ <b>Dead Stock (0 sales in 60d):</b> ${deadStock.length} items\n`;
+      }
+      if (needCount.length) {
+        weeklyMsg += `🔍 <b>Items needing physical shelf count:</b> ${needCount.length} items (/low)\n`;
+      }
+      ctx.waitUntil(send(env, env.OWNER_CHAT_ID, weeklyMsg));
+      return;
+    }
+
+    // Daily Morning Report
+    let text = `☀️ <b>Good morning! Yesterday's Report (${yesterday})</b>\n`;
+    if (ySales.daily.length) {
+      const diff = ySales.store_sales - lastWeekSales.store_sales;
+      const pct = lastWeekSales.store_sales > 0 ? (diff / lastWeekSales.store_sales) * 100 : 0;
+      const trend = diff >= 0 ? `+${money(diff)} (+${pct.toFixed(1)}%)` : `${money(diff)} (${pct.toFixed(1)}%)`;
+
+      text += `Store Sales (no lottery): <b>${money(ySales.store_sales)}</b>\n`;
+      text += `Vs same day last week (${sameDayLastWeek}): ${money(lastWeekSales.store_sales)} (${trend})\n`;
+      if (ySales.tracked_margin != null) {
+        text += `Tracked Profit: ${money(ySales.tracked_profit)} (${(ySales.tracked_margin * 100).toFixed(0)}% margin)\n`;
+      }
+      if (ySales.top_items.length) {
+        text += `\n<b>Top 5 Items:</b>\n` +
+          ySales.top_items.slice(0, 5).map(it => `• ${esc(it.name)} ×${it.qty} (${money(it.amount)})`).join('\n') + '\n';
+      }
+    } else {
+      text += `<i>Yesterday's sales report has not arrived yet.</i>\n`;
+    }
+
+    if (low.length) {
+      text += `\n🚨 <b>Out / Reorder Alert (${low.length} items):</b>\n` +
+        low.slice(0, 8).map(r => `• ${esc(pname(r))}: <b>${r.on_hand}</b> left (~${r.per_week}/wk)`).join('\n') +
+        (low.length > 8 ? `\n<i>...and ${low.length - 8} more (/low)</i>` : '');
+    }
+
+    if (pend && pend.n > 0) {
+      text += `\n\n⏳ <b>${pend.n} invoice(s) waiting for your review.</b>`;
+    }
+
+    ctx.waitUntil(send(env, env.OWNER_CHAT_ID, text));
+  }
+};
+
+// Protected API Router
+async function handleApi(req, env, url, ctx) {
+  const db = env.DB;
+  const p = url.pathname;
+  const q = url.searchParams;
+
+  // GET /api/summary
+  if (p === '/api/summary') {
+    const y = addDays(todayLocal(), -1);
+    const last = await db.prepare('SELECT MAX(sale_date) d FROM sales').first();
+    const day = q.get('date') || last?.d || y;
+    const days = Number(q.get('days') || 30);
+    const rangeStart = addDays(day, -(days - 1));
+
+    const [one, range, inv, pend, orders] = await Promise.all([
+      salesSummary(db, day, day),
+      salesSummary(db, rangeStart, day),
+      inventory(db, { onlyTracked: false }),
+      db.prepare("SELECT COUNT(*) n FROM invoices WHERE status='pending'").first(),
+      distributorOrderSuggestions(db)
+    ]);
+
+    const counts = { OUT: 0, REORDER: 0, OVERSTOCK: 0, 'NOT SELLING': 0, 'NOT COUNTED': 0, OK: 0 };
+    let totalStockValue = 0;
+    let needsCountCount = 0;
+
+    for (const r of inv) {
+      counts[r.status] = (counts[r.status] || 0) + 1;
+      if (r.stock_value) totalStockValue += r.stock_value;
+      if (r.needs_count) needsCountCount++;
+    }
+
+    return json({
+      day: one,
+      range,
+      inventory: {
+        counts,
+        stock_value: +totalStockValue.toFixed(2),
+        tracked: inv.filter(r => r.status !== 'NOT COUNTED').length,
+        total_products: inv.length,
+        needs_count: needsCountCount
+      },
+      pending_invoices: pend?.n || 0,
+      distributor_orders: orders
+    });
+  }
+
+  // GET /api/inventory
+  if (p === '/api/inventory') {
+    const items = await inventory(db, {
+      category: q.get('category') || undefined,
+      subCategory: q.get('sub_category') || undefined,
+      distributor: q.get('distributor') || undefined,
+      status: q.get('status') || undefined,
+      isTopShelf: q.get('top_shelf') === '1' || q.get('top_shelf') === 'true',
+      onlyTracked: q.get('all') !== '1'
+    });
+    return json(items);
+  }
+
+  // GET /api/sales
+  if (p === '/api/sales') {
+    const end = q.get('end') || todayLocal();
+    const start = q.get('start') || addDays(end, -29);
+    return json(await salesSummary(db, start, end));
+  }
+
+  // GET /api/product
+  if (p === '/api/product') {
+    const id = Number(q.get('id'));
+    const item = await ledger(db, id);
+    if (!item) return json({ error: 'not found' }, 404);
+    return json(item);
+  }
+
+  // GET /api/search
+  if (p === '/api/search') {
+    const query = q.get('q') || '';
+    const limit = Number(q.get('limit') || 15);
+    return json(await searchProducts(db, query, limit));
+  }
+
+  // GET /api/orders
+  if (p === '/api/orders') {
+    return json(await distributorOrderSuggestions(db));
+  }
+
+  // GET /api/invoices
+  if (p === '/api/invoices') {
+    const rows = (await db.prepare(`
+      SELECT i.id, i.distributor, i.invoice_no, i.invoice_date, i.total, i.status, i.source, i.file_key, i.created_at,
+             COUNT(l.id) as line_count
+      FROM invoices i
+      LEFT JOIN invoice_lines l ON l.invoice_id = i.id
+      GROUP BY i.id
+      ORDER BY COALESCE(i.invoice_date, i.created_at) DESC
+      LIMIT 100
+    `).all()).results;
+    return json(rows);
+  }
+
+  // GET /api/invoice
+  if (p === '/api/invoice') {
+    const id = Number(q.get('id'));
+    const inv = await db.prepare('SELECT id, distributor, invoice_no, invoice_date, total, status, file_key, source FROM invoices WHERE id=?').bind(id).first();
+    if (!inv) return json({ error: 'invoice not found' }, 404);
+    const lines = (await db.prepare(`
+      SELECT l.*, p.name product_name, p.clean_name, p.size, p.cost current_cost, p.price current_price
+      FROM invoice_lines l
+      LEFT JOIN products p ON p.id = l.product_id
+      WHERE l.invoice_id = ?
+    `).bind(id).all()).results;
+    return json({ invoice: inv, lines });
+  }
+
+  // GET /api/invoice/file
+  if (p === '/api/invoice/file' && env.FILES) {
+    const id = Number(q.get('id'));
+    const inv = await db.prepare('SELECT file_key FROM invoices WHERE id=?').bind(id).first();
+    const obj = inv?.file_key ? await env.FILES.get(inv.file_key) : null;
+    if (!obj) return json({ error: 'file not found' }, 404);
+    return new Response(obj.body, {
+      headers: { 'content-type': obj.httpMetadata?.contentType || 'application/octet-stream' }
+    });
+  }
+
+  // POST Mutating Endpoints
+  if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
+  const body = req.headers.get('content-type')?.includes('application/json') ? await req.json() : {};
+
+  // POST /api/count
+  if (p === '/api/count') {
+    const pid = Number(body.product_id);
+    const qty = Number(body.qty);
+    const note = body.note || 'dashboard count';
+    const before = await stockFor(db, pid);
+    const after = await setCount(db, pid, qty, note);
+    await setSetting(db, 'last_change', JSON.stringify({ type: 'count', product_id: pid }));
+    return json({ saved: true, before: before.on_hand, after: after.on_hand });
+  }
+
+  // POST /api/adjust
+  if (p === '/api/adjust') {
+    const pid = Number(body.product_id);
+    const delta = Number(body.delta);
+    const reason = body.reason || 'dashboard adjustment';
+    const after = await adjust(db, pid, delta, reason);
+    await setSetting(db, 'last_change', JSON.stringify({ type: 'adjust', product_id: pid }));
+    return json({ saved: true, on_hand: after.on_hand });
+  }
+
+  // POST /api/price
+  if (p === '/api/price') {
+    const pid = Number(body.product_id);
+    const price = body.price != null ? Number(body.price) : null;
+    const cost = body.cost != null ? Number(body.cost) : null;
+    const old = await db.prepare('SELECT price, price_source FROM products WHERE id=?').bind(pid).first();
+
+    await db.prepare(`
+      UPDATE products
+      SET price = COALESCE(?, price),
+          cost = COALESCE(?, cost),
+          price_source = CASE WHEN ? IS NOT NULL THEN 'manual' ELSE price_source END
+      WHERE id = ?
+    `).bind(price, cost, price, pid).run();
+
+    await setSetting(db, 'last_change', JSON.stringify({ type: 'price', product_id: pid, old: old?.price, old_source: old?.price_source }));
+    return json({ ok: true });
+  }
+
+  // POST /api/undo
+  if (p === '/api/undo') {
+    return json({ message: await undo(env) });
+  }
+
+  // POST /api/ask
+  if (p === '/api/ask') {
+    if (!env.GEMINI_API_KEY) return json({ answer: 'Gemini AI key is not configured.' });
+    const question = String(body.question || '');
+    const history = Array.isArray(body.history) ? body.history : [];
+    return json({ answer: await askAssistant(env, question, history) });
+  }
+
+  // POST /api/invoice/post
+  if (p === '/api/invoice/post') {
+    const id = Number(body.id);
+    return json(await postInvoice(db, id));
+  }
+
+  // POST /api/invoice/discard
+  if (p === '/api/invoice/discard') {
+    const id = Number(body.id);
+    await db.batch([
+      db.prepare('DELETE FROM invoice_lines WHERE invoice_id=?').bind(id),
+      db.prepare("DELETE FROM invoices WHERE id=? AND status<>'posted'").bind(id)
+    ]);
+    return json({ ok: true });
+  }
+
+  // POST /api/upload (CSV sales or invoice PDF/photo)
+  if (p === '/api/upload') {
+    const form = await req.formData();
+    const file = form.get('file');
+    if (!file) return json({ error: 'no file provided' }, 400);
+
+    const bytes = new Uint8Array(await file.arrayBuffer());
+
+    if (/\.csv$/i.test(file.name)) {
+      const date = form.get('date') || dateFromFilename(file.name);
+      const csvStr = new TextDecoder().decode(bytes);
+      const res = await ingestSalesCsv(db, csvStr, date, file.name);
+      return json({ kind: 'sales', ...res });
+    }
+
+    if (!env.GEMINI_API_KEY) {
+      return json({ error: 'AI not configured – cannot extract PDFs/photos' }, 400);
+    }
+
+    const key = `invoices/${todayLocal()}/${Date.now()}_${file.name.replace(/[^\w.-]/g, '_')}`;
+    if (env.FILES) {
+      await env.FILES.put(key, bytes, { httpMetadata: { contentType: file.type || 'application/pdf' } });
+    }
+    const inv = await extractInvoice(env, bytes, file.type || 'application/pdf');
+    const st = await stageInvoice(db, inv, { file_key: key, source: 'dashboard' });
+    return json({ kind: 'invoice', ...st });
+  }
+
+  return json({ error: 'endpoint not found' }, 404);
+}
+
+// Signed Cookie Authentication
+async function hmac(env, data) {
+  const secret = (env.DASHBOARD_PASSWORD || '') + '|' + (env.INGEST_KEY || '');
+  const key = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(secret),
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  const sig = await crypto.subtle.sign('HMAC', key, new TextEncoder().encode(data));
+  return btoa(String.fromCharCode(...new Uint8Array(sig))).replace(/[+/=]/g, c => ({ '+': '-', '/': '_', '=': '' }[c]));
+}
+
+async function sign(env, exp) {
+  return exp + '.' + await hmac(env, exp);
+}
+
+async function checkCookie(env, req) {
+  if (!env.DASHBOARD_PASSWORD) return false;
+  const match = (req.headers.get('cookie') || '').match(/(?:^|;\s*)dl=([^;]+)/);
+  if (!match) return false;
+  const [exp, sig] = match[1].split('.');
+  if (!exp || !sig) return false;
+  return Number(exp) > Date.now() && sig === await hmac(env, exp);
+}
+
+function loginPage(bad = false) {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Discount Liquor – Eustis FL</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; display: grid; place-items: center; min-height: 100vh; margin: 0; }
+    .box { background: #1e293b; padding: 32px; border-radius: 16px; width: min(340px, 90vw); box-shadow: 0 20px 25px -5px rgba(0,0,0,0.5); border: 1px solid #334155; }
+    h2 { margin: 0 0 6px; font-size: 22px; color: #f8fafc; }
+    p { margin: 0 0 20px; font-size: 13px; color: #94a3b8; }
+    input { width: 100%; padding: 12px; border-radius: 8px; border: 1px solid #475569; background: #0f172a; color: #fff; font-size: 16px; box-sizing: border-box; margin-bottom: 14px; }
+    button { width: 100%; padding: 12px; border-radius: 8px; border: 0; background: #f59e0b; color: #0f172a; font-size: 16px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+    button:hover { background: #d97706; }
+    .err { color: #f87171; font-size: 13px; margin-bottom: 12px; }
+  </style>
+</head>
+<body>
+  <div class="box">
+    <h2>🥃 Discount Liquor</h2>
+    <p>2105 E Orange Ave, Eustis FL</p>
+    <form method="post" action="/login">
+      ${bad ? '<div class="err">Wrong password. Try again.</div>' : ''}
+      <input type="password" name="password" placeholder="Dashboard password" autofocus required />
+      <button type="submit">Sign in</button>
+    </form>
+  </div>
+</body>
+</html>`;
+}
+
+function dashboardShellHtml() {
+  return `<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>Discount Liquor – Dashboard</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; background: #0f172a; color: #f8fafc; margin: 0; padding: 24px; }
+    header { display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid #334155; padding-bottom: 16px; margin-bottom: 24px; }
+    h1 { margin: 0; font-size: 22px; }
+    a.btn { background: #334155; color: #f8fafc; text-decoration: none; padding: 8px 14px; border-radius: 6px; font-size: 13px; }
+    .card { background: #1e293b; border-radius: 12px; padding: 20px; border: 1px solid #334155; margin-bottom: 20px; }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1>🥃 Discount Liquor</h1>
+      <div style="font-size: 12px; color: #94a3b8;">Store Backend & Stock Ledger (Eustis FL)</div>
+    </div>
+    <a href="/logout" class="btn">Sign out</a>
+  </header>
+  <div class="card">
+    <h3>✅ Cloudflare Backend Active</h3>
+    <p style="color: #94a3b8; font-size: 14px;">The Stock Ledger Engine and API routes are running. All 5 tabs will connect directly via <code>/api/*</code>.</p>
+    <p style="font-size: 13px; color: #38bdf8;">API endpoints ready: /api/summary, /api/inventory, /api/sales, /api/product, /api/orders, /api/invoices, /api/ask</p>
+  </div>
+</body>
+</html>`;
+}

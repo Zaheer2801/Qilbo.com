@@ -237,13 +237,15 @@ export async function adjust(db, productId, delta, reason) {
 
 // Complete inventory query with 6 statuses:
 // OUT, REORDER, OVERSTOCK, NOT SELLING (0 in 60d), NOT COUNTED, OK
-export async function inventory(db, { category, distributor, onlyTracked = true } = {}) {
+export async function inventory(db, { category, subCategory, distributor, status, isTopShelf, onlyTracked = true } = {}) {
   const from30 = addDays(todayLocal(), -30);
   const from60 = addDays(todayLocal(), -60);
   const conds = ["p.active=1", "p.category NOT IN ('Lottery','Grocery','Tobacco')"];
   const binds = [];
   if (category) { binds.push(category); conds.push(`p.category = ?${binds.length + 1}`); }
+  if (subCategory) { binds.push(subCategory); conds.push(`p.sub_category = ?${binds.length + 1}`); }
   if (distributor) { binds.push(distributor); conds.push(`p.distributor = ?${binds.length + 1}`); }
+  if (isTopShelf) { conds.push("p.is_top_shelf = 1"); }
 
   const rows = await stockMany(db, conds.join(' AND '), binds);
 
@@ -266,18 +268,20 @@ export async function inventory(db, { category, distributor, onlyTracked = true 
     const weeks = perWeek > 0 ? r.on_hand / perWeek : null;
     const rp = r.reorder_point ?? Math.max(2, Math.ceil(perWeek * 2)); // two weeks of sales
 
-    let status = 'OK';
+    let itemStatus = 'OK';
     if (!r.known) {
-      status = 'NOT COUNTED';
+      itemStatus = 'NOT COUNTED';
     } else if (r.on_hand <= 0) {
-      status = 'OUT';
+      itemStatus = 'OUT';
     } else if (r.on_hand <= rp && perWeek > 0) {
-      status = 'REORDER';
+      itemStatus = 'REORDER';
     } else if (q60 === 0) {
-      status = 'NOT SELLING'; // 0 sales in 60 days
+      itemStatus = 'NOT SELLING'; // 0 sales in 60 days
     } else if (weeks !== null && weeks > 16) {
-      status = 'OVERSTOCK';
+      itemStatus = 'OVERSTOCK';
     }
+
+    if (status && itemStatus !== status.toUpperCase()) continue;
 
     const avgPrice = s30.q ? s30.a / s30.q / (1 + TAX) : (r.price || null);
     const margin = avgPrice && r.cost ? (avgPrice - r.cost) / avgPrice : null;
@@ -290,6 +294,8 @@ export async function inventory(db, { category, distributor, onlyTracked = true 
       size: r.size,
       category: r.category,
       department: r.department,
+      sub_category: r.sub_category,
+      is_top_shelf: r.is_top_shelf,
       distributor: r.distributor,
       case_size: r.case_size,
       units_per_case: r.units_per_case,
@@ -307,7 +313,7 @@ export async function inventory(db, { category, distributor, onlyTracked = true 
       per_week: +perWeek.toFixed(1),
       weeks_left: weeks == null ? null : +weeks.toFixed(1),
       reorder_point: rp,
-      status,
+      status: itemStatus,
       avg_price: avgPrice && +avgPrice.toFixed(2),
       margin: margin == null ? null : +margin.toFixed(3),
       stock_value: r.cost ? +(Math.max(r.on_hand ?? 0, 0) * r.cost).toFixed(2) : null
@@ -319,32 +325,140 @@ export async function inventory(db, { category, distributor, onlyTracked = true 
 export async function salesSummary(db, start, end) {
   end = end || start;
   const tot = await db.prepare(`SELECT COALESCE(SUM(s.amount),0) amount, COALESCE(SUM(s.qty),0) qty FROM sales s
-      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') <> 'Lottery'`).bind(start, end).first();
+      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') <> 'Lottery' AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
   const dept = (await db.prepare(`SELECT department, SUM(qty) qty, SUM(amount) amount FROM dept_sales WHERE sale_date BETWEEN ? AND ?
       GROUP BY department ORDER BY amount DESC`).bind(start, end).all()).results;
   const byCat = (await db.prepare(`SELECT COALESCE(p.category,'Unknown') category, SUM(s.qty) qty, SUM(s.amount) amount FROM sales s
-      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? GROUP BY 1 ORDER BY amount DESC`).bind(start, end).all()).results;
+      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') <> 'Lottery' AND s.upc NOT LIKE '798028%' GROUP BY 1 ORDER BY amount DESC`).bind(start, end).all()).results;
   const top = (await db.prepare(`SELECT COALESCE(p.clean_name,p.name,s.name) name, p.size, SUM(s.qty) qty, SUM(s.amount) amount FROM sales s
-      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') NOT IN ('Lottery')
+      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') NOT IN ('Lottery') AND s.upc NOT LIKE '798028%'
       GROUP BY COALESCE(p.id,s.upc) ORDER BY amount DESC LIMIT 15`).bind(start, end).all()).results;
-  const daily = (await db.prepare(`SELECT s.sale_date d, SUM(CASE WHEN COALESCE(p.category,'')<>'Lottery' THEN s.amount ELSE 0 END) amount
+  const daily = (await db.prepare(`SELECT s.sale_date d, SUM(CASE WHEN COALESCE(p.category,'')<>'Lottery' AND s.upc NOT LIKE '798028%' THEN s.amount ELSE 0 END) amount
       FROM sales s LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? GROUP BY 1 ORDER BY 1`).bind(start, end).all()).results;
   const deptNonLotto = dept.filter(d => !/lotter/i.test(d.department)).reduce((a, d) => a + d.amount, 0);
   const cogs = await db.prepare(`SELECT COALESCE(SUM(s.qty*p.cost),0) c, COALESCE(SUM(CASE WHEN p.cost IS NOT NULL THEN s.amount END),0) a
-      FROM sales s JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND p.cost IS NOT NULL`).bind(start, end).first();
+      FROM sales s JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND p.cost IS NOT NULL AND COALESCE(p.category,'') <> 'Lottery' AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
   const pre = cogs.a / (1 + TAX);
+
+  // Top shelf metrics (premium liquor only; no lottery)
+  const topShelf = await db.prepare(`SELECT COALESCE(SUM(s.amount),0) amount, COALESCE(SUM(s.qty),0) qty
+      FROM sales s JOIN products p ON p.id=s.product_id
+      WHERE s.sale_date BETWEEN ? AND ? AND p.is_top_shelf = 1 AND p.category = 'Liquor' AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
+  const storeSales = +(tot.amount + deptNonLotto).toFixed(2);
+
   return {
     start,
     end,
-    store_sales: +(tot.amount + deptNonLotto).toFixed(2),
+    store_sales: storeSales,
     scanned_items: tot.qty,
     by_category: byCat,
     departments: dept,
     top_items: top,
     daily,
     tracked_profit: +(pre - cogs.c).toFixed(2),
-    tracked_margin: pre ? +((pre - cogs.c) / pre).toFixed(3) : null
+    tracked_margin: pre ? +((pre - cogs.c) / pre).toFixed(3) : null,
+    top_shelf: {
+      amount: +topShelf.amount.toFixed(2),
+      qty: topShelf.qty,
+      share: storeSales ? +(topShelf.amount / storeSales).toFixed(3) : 0
+    }
   };
+}
+
+export async function distributorOrderSuggestions(db) {
+  const inv = await inventory(db, { onlyTracked: false });
+  const distributors = {
+    "Southern Glazer's": { min_amount: 200, min_cases: 5, fee_threshold: 425, fee_amount: 30 },
+    "Gold Coast": { min_amount: 300, min_cases: 0, fee_threshold: 0, fee_amount: 0 },
+    "Florida Distributors": { min_amount: 300, min_cases: 0, fee_threshold: 0, fee_amount: 0 },
+    "Breakthru": { min_amount: 0, min_cases: 0, fee_threshold: 0, fee_amount: 0 },
+    "Wayne Densch": { min_amount: 0, min_cases: 0, fee_threshold: 0, fee_amount: 0, is_rep_text: true }
+  };
+
+  const groups = {};
+  for (const [name, cfg] of Object.entries(distributors)) {
+    groups[name] = { distributor: name, config: cfg, total_cases: 0, total_cost: 0, items: [] };
+  }
+
+  const todayStr = todayLocal();
+  const todayDate = new Date(todayStr + 'T12:00:00Z');
+  const isMonday = todayDate.getUTCDay() === 1;
+
+  for (const item of inv) {
+    if (!item.distributor || !groups[item.distributor]) continue;
+    const v30 = item.sold30 || 0;
+    if (v30 <= 0 && item.status !== 'OUT' && item.status !== 'REORDER') continue;
+
+    const twoWeekDemand = Math.round((v30 / 30) * 14);
+    const onHand = item.on_hand != null ? item.on_hand : 0;
+    const caseSize = item.case_size || (item.category === 'Beer/RTD' ? 24 : 12);
+    const deficit = Math.max(0, twoWeekDemand - onHand);
+    if (deficit <= 0 && item.status !== 'OUT' && item.status !== 'REORDER') continue;
+
+    let cases = Math.ceil(deficit / caseSize);
+    if (cases === 0 && (item.status === 'OUT' || item.status === 'REORDER')) cases = 1;
+    if (cases <= 0) continue;
+
+    const unitCost = item.cost || (item.price ? item.price * 0.75 : 0);
+    const caseCost = +(unitCost * caseSize).toFixed(2);
+    const lineTotal = +(cases * caseCost).toFixed(2);
+
+    const grp = groups[item.distributor];
+    grp.total_cases += cases;
+    grp.total_cost = +(grp.total_cost + lineTotal).toFixed(2);
+    grp.items.push({
+      product_id: item.id,
+      name: item.clean_name || item.name,
+      size: item.size,
+      on_hand: item.on_hand,
+      sold30: v30,
+      two_week_demand: twoWeekDemand,
+      case_size: caseSize,
+      cases_suggested: cases,
+      unit_cost: unitCost,
+      case_cost: caseCost,
+      line_total: lineTotal,
+      status: item.status
+    });
+  }
+
+  const result = [];
+  for (const [name, grp] of Object.entries(groups)) {
+    const cfg = grp.config;
+    let meetsMin = true;
+    let minText = '';
+    let feeWarning = null;
+
+    if (name === "Southern Glazer's") {
+      meetsMin = (grp.total_cost >= cfg.min_amount) || (grp.total_cases >= cfg.min_cases);
+      minText = `$${cfg.min_amount} or ${cfg.min_cases} cases`;
+      if (grp.total_cost < cfg.fee_threshold && !isMonday && grp.total_cases > 0) {
+        feeWarning = `$30 fee applies (orders under $${cfg.fee_threshold}, waived on Mondays)`;
+      }
+    } else if (cfg.min_amount > 0) {
+      meetsMin = grp.total_cost >= cfg.min_amount;
+      minText = `$${cfg.min_amount} minimum`;
+    }
+
+    let repText = null;
+    if (name === 'Wayne Densch') {
+      repText = `Order for Discount Liquor (2105 E Orange Ave, Eustis FL):\n` +
+        grp.items.map(it => `• ${it.cases_suggested} cs ${it.name} ${it.size || ''}`).join('\n');
+    }
+
+    result.push({
+      distributor: name,
+      total_cases: grp.total_cases,
+      total_cost: grp.total_cost,
+      meets_minimum: meetsMin,
+      minimum_rule: minText,
+      fee_warning: feeWarning,
+      is_monday: isMonday,
+      rep_text: repText,
+      items: grp.items.sort((a, b) => b.line_total - a.line_total)
+    });
+  }
+  return result;
 }
 
 export async function getSetting(db, key, dflt = null) {

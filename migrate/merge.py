@@ -248,7 +248,8 @@ def main():
             upc_map[upc_clean] = new_pid
             new_products_added += 1
 
-    print(f"  -> Enriched {enriched_products} existing products; added {new_products_added} new SKUs.")
+    cur.execute("UPDATE products SET is_top_shelf = 0 WHERE category IN ('Lottery', 'Tobacco', 'Grocery')")
+    print(f"  -> Enriched {enriched_products} existing products; added {new_products_added} new SKUs (cleared top_shelf on non-liquor).")
 
     # 4. Merge Wayne Densch Invoice #534869
     print("\n[Step 3/5] Merging Wayne Densch Invoice #534869 ($1,276.25, 50 cases)...")
