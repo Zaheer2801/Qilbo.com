@@ -74,6 +74,7 @@ def main():
       units_per_pack INTEGER,
       cost           REAL,
       price          REAL,
+      price_source   TEXT DEFAULT 'estimated',
       reorder_point  INTEGER,
       image_key      TEXT,
       active         INTEGER DEFAULT 1,
@@ -336,6 +337,46 @@ def main():
             sales_added += 1
 
     print(f"  -> Qilbo sales processed: {sales_added} new lines added, {duplicates_skipped} duplicates skipped, {lottery_skipped} lottery lines kept separate.")
+
+    # 5b. Resolve clean single-unit prices and price_source (manual / register / estimated)
+    print("\n[Step 4b/5] Setting clean single-unit prices and price_source...")
+    cur.execute("""
+        UPDATE products
+        SET price_source = 'manual'
+        WHERE price IS NOT NULL AND distributor = "Southern Glazer's" AND cost IS NOT NULL
+    """)
+
+    cur.execute("""
+        WITH single_sales AS (
+            SELECT product_id, amount,
+                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY sale_date DESC) as rn
+            FROM sales
+            WHERE qty = 1.0 AND product_id IS NOT NULL AND amount > 0
+        )
+        SELECT product_id, amount FROM single_sales WHERE rn = 1
+    """)
+    single_sales = cur.fetchall()
+    reg_price_count = 0
+    for row in single_sales:
+        pid = row[0]
+        amt = row[1]
+        clean_pre_tax = round(amt / 1.07, 2)
+        cur.execute("""
+            UPDATE products
+            SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
+                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'register' END
+            WHERE id = ?
+        """, (clean_pre_tax, pid))
+        reg_price_count += 1
+
+    cur.execute("""
+        UPDATE products
+        SET price_source = 'estimated'
+        WHERE (price_source IS NULL OR price_source = '') AND price IS NOT NULL
+    """)
+    cur.execute("SELECT price_source, COUNT(*) FROM products GROUP BY price_source")
+    for ps, cnt in cur.fetchall():
+        print(f"  -> price_source '{ps or 'none'}': {cnt} products")
 
     # 6. Verify Acceptance Criteria
     print("\n[Step 5/5] Verifying Acceptance Criteria...")

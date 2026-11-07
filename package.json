@@ -1,0 +1,16 @@
+{
+  "name": "qilbo-workspace",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "scripts": {
+    "test": "node test/ledger.test.js",
+    "sync:sample": "python3 -m nrs_pipeline.sync_engine",
+    "sync:gmail": "python3 -m nrs_pipeline.sync_engine --fetch-gmail",
+    "sync:all": "python3 -m nrs_pipeline.batch_fetch_all",
+    "summary": "python3 -m nrs_pipeline.sync_engine --summary",
+    "server": "node server/index.js",
+    "web": "cd qilbo-app && npm run dev",
+    "build": "cd qilbo-app && npm run build"
+  }
+}
