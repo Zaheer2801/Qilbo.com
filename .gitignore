@@ -4,3 +4,11 @@ dist/
 *.log
 .env
 .env.*
+.dev.vars
+*.db
+*.db.bak
+_backups/
+downloads/
+google_drive_archive/
+__pycache__/
+*.pyc
