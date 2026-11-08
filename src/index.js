@@ -18,7 +18,7 @@ import {
   stageInvoice,
   postInvoice
 } from './ingest.js';
-import { askAssistant, extractInvoice } from './ai.js';
+import { askAssistant, extractInvoice, getAiStats, resetAiStats } from './ai.js';
 import {
   handleUpdate,
   send,
@@ -442,9 +442,20 @@ async function handleApi(req, env, url, ctx) {
     });
   }
 
+  // GET /api/ai/stats
+  if (p === '/api/ai/stats') {
+    return json(getAiStats());
+  }
+
   // POST Mutating Endpoints
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
   const body = req.headers.get('content-type')?.includes('application/json') ? await req.json() : {};
+
+  // POST /api/ai/reset
+  if (p === '/api/ai/reset') {
+    resetAiStats();
+    return json({ ok: true, stats: getAiStats() });
+  }
 
   // POST /api/count
   if (p === '/api/count') {
@@ -486,6 +497,14 @@ async function handleApi(req, env, url, ctx) {
     return json({ ok: true });
   }
 
+  // POST /api/product/toggle-no-reorder
+  if (p === '/api/product/toggle-no-reorder') {
+    const pid = Number(body.product_id);
+    const flag = body.do_not_reorder ? 1 : 0;
+    await db.prepare('UPDATE products SET do_not_reorder=? WHERE id=?').bind(flag, pid).run();
+    return json({ ok: true, product_id: pid, do_not_reorder: flag });
+  }
+
   // POST /api/undo
   if (p === '/api/undo') {
     return json({ message: await undo(env) });
@@ -496,7 +515,8 @@ async function handleApi(req, env, url, ctx) {
     if (!env.GEMINI_API_KEY) return json({ answer: 'Gemini AI key is not configured.' });
     const question = String(body.question || '');
     const history = Array.isArray(body.history) ? body.history : [];
-    return json({ answer: await askAssistant(env, question, history) });
+    const today = body.today || env.TODAY_OVERRIDE;
+    return json({ answer: await askAssistant(env, question, history, today) });
   }
 
   // POST /api/invoice/post

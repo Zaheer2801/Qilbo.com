@@ -129,6 +129,13 @@ export const api = {
     });
   },
 
+  toggleNoReorder: (productId: number, doNotReorder: boolean) => {
+    return request<{ ok: boolean; product_id: number; do_not_reorder: number }>("/api/product/toggle-no-reorder", {
+      method: "POST",
+      body: JSON.stringify({ product_id: productId, do_not_reorder: doNotReorder ? 1 : 0 }),
+    });
+  },
+
   undo: () => {
     return request<{ message: string }>("/api/undo", { method: "POST" });
   },

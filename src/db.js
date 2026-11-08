@@ -303,6 +303,7 @@ export async function inventory(db, { category, subCategory, distributor, status
       price: r.price,
       price_source: r.price_source || 'estimated',
       display_price: displayPrice,
+      do_not_reorder: r.do_not_reorder || 0,
       on_hand: r.on_hand,
       basis: r.basis,
       arithmetic: r.arithmetic,
@@ -386,6 +387,7 @@ export async function distributorOrderSuggestions(db) {
 
   for (const item of inv) {
     if (!item.distributor || !groups[item.distributor]) continue;
+    if (item.do_not_reorder) continue;
     const v30 = item.sold30 || 0;
     if (v30 <= 0 && item.status !== 'OUT' && item.status !== 'REORDER') continue;
 

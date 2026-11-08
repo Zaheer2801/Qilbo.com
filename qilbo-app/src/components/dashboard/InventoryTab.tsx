@@ -201,7 +201,100 @@ export default function InventoryTab({ initialTopShelfFilter = false }: Props) {
 
       {/* Inventory Items List */}
       <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
-        <div className="overflow-x-auto">
+        {/* Mobile View (< 640px): Responsive Cards */}
+        <div className="sm:hidden divide-y divide-stone-800/80">
+          {filtered.slice(0, 150).map((it) => {
+            const isOut = it.status === "OUT";
+            const isReorder = it.status === "REORDER";
+            const isNotCounted = it.status === "NOT COUNTED";
+
+            return (
+              <div
+                key={it.id}
+                onClick={() => setSelectedProductId(it.id)}
+                className="p-3.5 hover:bg-stone-800/40 active:bg-stone-800 cursor-pointer transition flex flex-col gap-2"
+              >
+                {/* Row 1: Name, Size, Status Badge */}
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex-1 min-w-0">
+                    <div className="font-semibold text-white text-sm leading-tight truncate">
+                      {it.clean_name || it.name}
+                    </div>
+                    <div className="text-[11px] text-stone-400 flex items-center gap-1.5 mt-0.5">
+                      {it.size && <span className="font-mono bg-stone-800 text-stone-300 px-1 rounded">{it.size}</span>}
+                      <span>•</span>
+                      <span className="truncate">{it.distributor || "Unknown"}</span>
+                      {it.is_top_shelf === 1 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1 rounded font-semibold">Top Shelf</span>
+                        </>
+                      )}
+                      {it.do_not_reorder === 1 && (
+                        <>
+                          <span>•</span>
+                          <span className="text-[10px] bg-red-500/20 text-red-300 px-1 rounded font-semibold">No Reorder</span>
+                        </>
+                      )}
+                    </div>
+                  </div>
+                  <span
+                    className={`text-[10px] font-bold px-2 py-0.5 rounded-full shrink-0 ${
+                      isOut
+                        ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                        : isReorder
+                        ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                        : isNotCounted
+                        ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                        : it.status === "NOT SELLING"
+                        ? "bg-stone-500/20 text-stone-400 border border-stone-500/30"
+                        : it.status === "OVERSTOCK"
+                        ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                        : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                    }`}
+                  >
+                    {it.status}
+                  </span>
+                </div>
+
+                {/* Row 2: Big ON HAND, Weeks Left, Price */}
+                <div className="flex items-end justify-between bg-stone-950/70 p-2.5 rounded-lg border border-stone-800/60">
+                  <div>
+                    <div className="text-[10px] uppercase text-stone-400 tracking-wider font-medium">On Hand</div>
+                    <div className="text-2xl font-black mt-0.5">
+                      {it.on_hand != null ? (
+                        <span className={isOut ? "text-red-400" : isReorder ? "text-amber-400" : "text-white"}>
+                          {it.on_hand}
+                        </span>
+                      ) : (
+                        <span className="text-stone-400 text-sm font-normal italic">Not Counted</span>
+                      )}
+                    </div>
+                  </div>
+
+                  <div className="text-center">
+                    <div className="text-[10px] uppercase text-stone-400 tracking-wider font-medium">Weeks Left</div>
+                    <div className={`text-sm font-bold mt-0.5 ${
+                      it.weeks_left != null && it.weeks_left <= 1.5 ? "text-red-400" : "text-stone-200"
+                    }`}>
+                      {it.weeks_left != null ? `${it.weeks_left.toFixed(1)} wks` : "–"}
+                    </div>
+                  </div>
+
+                  <div className="text-right">
+                    <div className="text-[10px] uppercase text-stone-400 tracking-wider font-medium">Pre-Tax Price</div>
+                    <div className="text-sm font-bold text-amber-300 mt-0.5">
+                      {it.display_price || "–"}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            );
+          })}
+        </div>
+
+        {/* Desktop View (>= 640px): Standard Table */}
+        <div className="hidden sm:block overflow-x-auto">
           <table className="w-full text-left text-xs text-stone-300">
             <thead className="bg-stone-950 text-stone-400 uppercase font-medium border-b border-stone-800">
               <tr>

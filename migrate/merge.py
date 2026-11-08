@@ -78,6 +78,7 @@ def main():
       reorder_point  INTEGER,
       image_key      TEXT,
       active         INTEGER DEFAULT 1,
+      do_not_reorder INTEGER DEFAULT 0,
       created_at     TEXT DEFAULT (datetime('now'))
     );
 
@@ -363,7 +364,7 @@ def main():
         ),
         ranked AS (
             SELECT product_id, amount, day_cnt, latest_date,
-                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY day_cnt DESC, latest_date DESC) as rn
+                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY latest_date DESC, day_cnt DESC) as rn
             FROM single_sales
         )
         SELECT product_id, amount, day_cnt FROM ranked WHERE rn = 1
@@ -407,6 +408,13 @@ def main():
         SET price_source = 'estimated'
         WHERE price IS NOT NULL AND price_source NOT IN ('manual', 'register')
     """)
+
+    # Flag do_not_reorder for Hennessy Iced Tea
+    cur.execute("UPDATE products SET do_not_reorder = 1 WHERE name LIKE '%Hennessy%Iced%Tea%' OR clean_name LIKE '%Hennessy%Iced%Tea%'")
+    cur.execute("SELECT id, clean_name, size, do_not_reorder FROM products WHERE do_not_reorder = 1")
+    for r in cur.fetchall():
+        print(f"  -> Flagged do_not_reorder=1: {r[1]} ({r[2]}) [ID {r[0]}]")
+
     cur.execute("SELECT price_source, COUNT(*) FROM products GROUP BY price_source")
     for ps, cnt in cur.fetchall():
         print(f"  -> price_source '{ps or 'none'}': {cnt} products")

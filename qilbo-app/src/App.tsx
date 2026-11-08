@@ -179,9 +179,6 @@ export default function App() {
             <div>
               <div className="flex items-center gap-1.5">
                 <span className="font-bold text-white text-sm sm:text-base tracking-tight">QILBO</span>
-                <span className="text-[10px] bg-amber-500/20 text-amber-300 font-bold px-1.5 py-0.2 rounded border border-amber-500/30">
-                  STORE POS
-                </span>
               </div>
               <p className="text-[10px] text-stone-400 hidden sm:block">Discount Liquor • Eustis, FL</p>
             </div>

@@ -147,56 +147,114 @@ export default function OrdersTab() {
                 </div>
               </div>
 
-              {/* Items Table */}
+              {/* Items List */}
               {hasItems ? (
-                <div className="overflow-x-auto">
-                  <table className="w-full text-left text-xs text-stone-300">
-                    <thead className="bg-stone-950/60 text-stone-400 uppercase font-medium border-b border-stone-800">
-                      <tr>
-                        <th className="py-2.5 px-4">Item Name</th>
-                        <th className="py-2.5 px-4">Size</th>
-                        <th className="py-2.5 px-4 text-center">Status</th>
-                        <th className="py-2.5 px-4 text-right">On Hand</th>
-                        <th className="py-2.5 px-4 text-right">30d Velocity</th>
-                        <th className="py-2.5 px-4 text-right">2-Wk Demand</th>
-                        <th className="py-2.5 px-4 text-right">Case Size</th>
-                        <th className="py-2.5 px-4 text-right font-bold text-white">Suggested Cases</th>
-                        <th className="py-2.5 px-4 text-right">Est. Total</th>
-                      </tr>
-                    </thead>
-                    <tbody className="divide-y divide-stone-800">
-                      {d.items.map((it) => (
-                        <tr key={it.product_id} className="hover:bg-stone-800/40 transition">
-                          <td className="py-2.5 px-4 font-medium text-white">{it.name}</td>
-                          <td className="py-2.5 px-4 text-stone-400">{it.size || "–"}</td>
-                          <td className="py-2.5 px-4 text-center">
-                            <span
-                              className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                                it.status === "OUT"
-                                  ? "bg-red-500/20 text-red-400"
-                                  : it.status === "REORDER"
-                                  ? "bg-amber-500/20 text-amber-300"
-                                  : "bg-stone-700 text-stone-300"
-                              }`}
-                            >
-                              {it.status}
-                            </span>
-                          </td>
-                          <td className="py-2.5 px-4 text-right font-mono">{it.on_hand ?? "–"}</td>
-                          <td className="py-2.5 px-4 text-right text-stone-400">{it.sold30} sold</td>
-                          <td className="py-2.5 px-4 text-right text-stone-300 font-medium">{it.two_week_demand} btl</td>
-                          <td className="py-2.5 px-4 text-right text-stone-400">{it.case_size}/cs</td>
-                          <td className="py-2.5 px-4 text-right font-bold text-amber-300 text-sm">
-                            {it.cases_suggested} cs
-                          </td>
-                          <td className="py-2.5 px-4 text-right font-semibold text-white">
-                            ${it.line_total.toFixed(2)}
-                          </td>
+                <>
+                  {/* Mobile Cards (< 640px) */}
+                  <div className="sm:hidden divide-y divide-stone-800">
+                    {d.items.map((it) => (
+                      <div key={it.product_id} className="p-3.5 space-y-2.5">
+                        <div className="flex items-start justify-between gap-2">
+                          <div className="flex-1 min-w-0">
+                            <div className="font-semibold text-white text-sm leading-tight truncate">
+                              {it.name}
+                            </div>
+                            <div className="text-[11px] text-stone-400 flex items-center gap-1.5 mt-0.5">
+                              {it.size && <span className="font-mono bg-stone-800 text-stone-300 px-1 rounded">{it.size}</span>}
+                              <span>•</span>
+                              <span>{it.case_size}/cs</span>
+                              <span>•</span>
+                              <span>30d: {it.sold30} sold</span>
+                            </div>
+                          </div>
+                          <span
+                            className={`text-[10px] font-bold px-1.5 py-0.5 rounded shrink-0 ${
+                              it.status === "OUT"
+                                ? "bg-red-500/20 text-red-400"
+                                : it.status === "REORDER"
+                                ? "bg-amber-500/20 text-amber-300"
+                                : "bg-stone-700 text-stone-300"
+                            }`}
+                          >
+                            {it.status}
+                          </span>
+                        </div>
+
+                        {/* Metrics Grid */}
+                        <div className="grid grid-cols-3 gap-2 bg-stone-950/80 p-2.5 rounded-lg border border-stone-800/80 text-center">
+                          <div>
+                            <div className="text-[10px] uppercase text-stone-400 font-medium">On Hand</div>
+                            <div className="text-xl font-black text-white mt-0.5">
+                              {it.on_hand ?? "–"}
+                            </div>
+                          </div>
+                          <div className="border-x border-stone-800/80">
+                            <div className="text-[10px] uppercase text-amber-400 font-bold">To Order</div>
+                            <div className="text-xl font-black text-amber-300 mt-0.5">
+                              {it.cases_suggested} cs
+                            </div>
+                          </div>
+                          <div>
+                            <div className="text-[10px] uppercase text-stone-400 font-medium">Est. Cost</div>
+                            <div className="text-sm font-bold text-white mt-1">
+                              ${it.line_total.toFixed(2)}
+                            </div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Desktop Table (>= 640px) */}
+                  <div className="hidden sm:block overflow-x-auto">
+                    <table className="w-full text-left text-xs text-stone-300">
+                      <thead className="bg-stone-950/60 text-stone-400 uppercase font-medium border-b border-stone-800">
+                        <tr>
+                          <th className="py-2.5 px-4">Item Name</th>
+                          <th className="py-2.5 px-4">Size</th>
+                          <th className="py-2.5 px-4 text-center">Status</th>
+                          <th className="py-2.5 px-4 text-right">On Hand</th>
+                          <th className="py-2.5 px-4 text-right">30d Velocity</th>
+                          <th className="py-2.5 px-4 text-right">2-Wk Demand</th>
+                          <th className="py-2.5 px-4 text-right">Case Size</th>
+                          <th className="py-2.5 px-4 text-right font-bold text-white">Suggested Cases</th>
+                          <th className="py-2.5 px-4 text-right">Est. Total</th>
                         </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
+                      </thead>
+                      <tbody className="divide-y divide-stone-800">
+                        {d.items.map((it) => (
+                          <tr key={it.product_id} className="hover:bg-stone-800/40 transition">
+                            <td className="py-2.5 px-4 font-medium text-white">{it.name}</td>
+                            <td className="py-2.5 px-4 text-stone-400">{it.size || "–"}</td>
+                            <td className="py-2.5 px-4 text-center">
+                              <span
+                                className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                                  it.status === "OUT"
+                                    ? "bg-red-500/20 text-red-400"
+                                    : it.status === "REORDER"
+                                    ? "bg-amber-500/20 text-amber-300"
+                                    : "bg-stone-700 text-stone-300"
+                                }`}
+                              >
+                                {it.status}
+                              </span>
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-mono">{it.on_hand ?? "–"}</td>
+                            <td className="py-2.5 px-4 text-right text-stone-400">{it.sold30} sold</td>
+                            <td className="py-2.5 px-4 text-right text-stone-300 font-medium">{it.two_week_demand} btl</td>
+                            <td className="py-2.5 px-4 text-right text-stone-400">{it.case_size}/cs</td>
+                            <td className="py-2.5 px-4 text-right font-bold text-amber-300 text-sm">
+                              {it.cases_suggested} cs
+                            </td>
+                            <td className="py-2.5 px-4 text-right font-semibold text-white">
+                              ${it.line_total.toFixed(2)}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </>
               ) : (
                 <div className="p-6 text-center text-xs text-stone-500 italic">
                   No orders needed for {d.distributor} (stock levels adequately cover 2 weeks of sales).

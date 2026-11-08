@@ -234,7 +234,7 @@ export async function ingestSalesCsv(db, csvText, saleDate, fileName) {
       WHERE product_id IN (${productIds.map((_, i) => '?' + (i + 2)).join(',')})
         AND (qty = 1.0 OR qty = 1) AND amount > 0 AND sale_date >= ?1
       GROUP BY product_id, amount
-      ORDER BY day_cnt DESC, latest_date DESC
+      ORDER BY latest_date DESC, day_cnt DESC
     `).bind(from60, ...productIds).all()).results;
 
     const bestSingle = new Map();

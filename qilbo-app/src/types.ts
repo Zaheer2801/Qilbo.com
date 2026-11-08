@@ -233,6 +233,7 @@ export interface ApiInventoryItem {
   margin: number | null;
   stock_value: number | null;
   is_top_shelf: number;
+  do_not_reorder?: number;
 }
 
 export interface ApiSalesSummary {
@@ -337,6 +338,7 @@ export interface ApiLedgerDetail {
     display_price: string | null;
     reorder_point: number | null;
     is_top_shelf: number;
+    do_not_reorder?: number;
   };
   upcs?: string[];
   stock: {

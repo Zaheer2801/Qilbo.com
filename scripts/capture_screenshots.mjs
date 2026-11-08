@@ -3,6 +3,7 @@ import path from 'path';
 import fs from 'fs';
 
 const ARTIFACT_DIR = '/Users/zaheer/.gemini/antigravity/brain/bb53ef40-ba15-4c16-bc5e-bb40c12a9fff';
+const SCREENSHOTS_DIR = '/Users/zaheer/Daily Reports/screenshots';
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
 
 const TABS = [
@@ -58,6 +59,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 2000));
     const outPath = path.join(ARTIFACT_DIR, `desktop_${tab.id}.png`);
     await page.screenshot({ path: outPath, fullPage: false });
+    fs.copyFileSync(outPath, path.join(SCREENSHOTS_DIR, `desktop_${tab.id}.png`));
     console.log(`Saved ${outPath}`);
   }
 
@@ -76,6 +78,7 @@ async function main() {
   await new Promise((r) => setTimeout(r, 1500));
   const desktopModalPath = path.join(ARTIFACT_DIR, 'desktop_modal_audit.png');
   await page.screenshot({ path: desktopModalPath, fullPage: false });
+  fs.copyFileSync(desktopModalPath, path.join(SCREENSHOTS_DIR, 'desktop_modal_audit.png'));
   console.log(`Saved ${desktopModalPath}`);
 
   // Refresh page before mobile run
@@ -97,6 +100,7 @@ async function main() {
     await new Promise((r) => setTimeout(r, 2000));
     const outPath = path.join(ARTIFACT_DIR, `mobile_${tab.id}.png`);
     await page.screenshot({ path: outPath, fullPage: false });
+    fs.copyFileSync(outPath, path.join(SCREENSHOTS_DIR, `mobile_${tab.id}.png`));
     console.log(`Saved ${outPath}`);
   }
 
@@ -109,13 +113,17 @@ async function main() {
   });
   await new Promise((r) => setTimeout(r, 1500));
   await page.evaluate(() => {
-    const rows = document.querySelectorAll('tbody tr');
-    if (rows.length > 5) rows[5].click();
-    else if (rows.length > 0) rows[0].click();
+    // Click Bud Light row card on mobile
+    const cards = Array.from(document.querySelectorAll('.sm\\:hidden.divide-y > div'));
+    const budLight = cards.find(c => c.textContent && c.textContent.includes('Bud Light 8-Pack'));
+    if (budLight) budLight.click();
+    else if (cards.length > 5) cards[5].click();
+    else if (cards.length > 0) cards[0].click();
   });
   await new Promise((r) => setTimeout(r, 1500));
   const mobileModalPath = path.join(ARTIFACT_DIR, 'mobile_modal_audit.png');
   await page.screenshot({ path: mobileModalPath, fullPage: false });
+  fs.copyFileSync(mobileModalPath, path.join(SCREENSHOTS_DIR, 'mobile_modal_audit.png'));
   console.log(`Saved ${mobileModalPath}`);
 
   await browser.close();

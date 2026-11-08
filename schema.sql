@@ -20,6 +20,7 @@ CREATE TABLE IF NOT EXISTS products (
   image_key      TEXT,
   active         INTEGER DEFAULT 1,
   is_top_shelf   INTEGER DEFAULT 0,
+  do_not_reorder INTEGER DEFAULT 0,
   created_at     TEXT DEFAULT (datetime('now')),
   updated_at     TEXT DEFAULT (datetime('now'))
 );

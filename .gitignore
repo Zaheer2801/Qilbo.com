@@ -15,3 +15,5 @@ google_drive_archive/
 __pycache__/
 *.pyc
 reference/
+screenshots/
+test_files/

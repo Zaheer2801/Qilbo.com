@@ -16,15 +16,36 @@ import {
 
 const BASE = 'https://generativelanguage.googleapis.com/v1beta/models/';
 
+let aiStats = { calls: 0, promptTokens: 0, candidateTokens: 0, totalTokens: 0 };
+
+export function getAiStats() {
+  return { ...aiStats };
+}
+
+export function resetAiStats() {
+  aiStats = { calls: 0, promptTokens: 0, candidateTokens: 0, totalTokens: 0 };
+}
+
 async function gemini(env, body) {
-  const model = env.GEMINI_MODEL || 'gemini-2.5-flash';
+  const model = env.GEMINI_MODEL || 'gemini-flash-lite-latest';
   const res = await fetch(`${env.GEMINI_BASE || BASE}${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
     body: JSON.stringify(body),
   });
   if (!res.ok) throw new Error(`Gemini ${res.status}: ${(await res.text()).slice(0, 300)}`);
-  return res.json();
+  const data = await res.json();
+  aiStats.calls++;
+  if (data.usageMetadata) {
+    const p = data.usageMetadata.promptTokenCount || 0;
+    const c = data.usageMetadata.candidatesTokenCount || 0;
+    const t = data.usageMetadata.totalTokenCount || 0;
+    aiStats.promptTokens += p;
+    aiStats.candidateTokens += c;
+    aiStats.totalTokens += t;
+    console.log(`[Gemini AI] Call #${aiStats.calls} (${model}) | Prompt: ${p} | Candidates: ${c} | Total: ${t} tokens`);
+  }
+  return data;
 }
 
 // ---------------- Tools for Gemini Assistant ----------------
@@ -137,14 +158,15 @@ const SYSTEM = (today) => `You are the store manager assistant for Discount Liqu
 Today is ${today} (America/New_York). Register sales include ${TAX * 100}% sales tax; quote shelf prices before tax.
 Rules:
 - Always look products up with search_products before answering about a product. If several products match, ask which one (list them briefly).
-- Stock on hand = last shelf count (or first delivery) + deliveries since - bottles sold since + adjustments. When the owner asks why a number looks wrong, call explain_stock and explain the arithmetic in plain words, and point out likely causes (sales rung under another barcode, delivery not entered, breakage).
-- When the owner says how many bottles he has ("I have 4 Don Julio 750"), use set_shelf_count for the exact matching product and confirm before→after.
+- Stock on hand = last shelf count (or first delivery) + deliveries since - bottles sold since + adjustments. When the owner asks why a number looks wrong or asks how many bottles he has and why, call search_products and explain_stock, explain the arithmetic in plain words, and point out likely causes.
+- When the owner says how many bottles he has ("I have 4 Don Julio 750"), use set_shelf_count for the exact matching product and confirm before→after. Mention that he can type /undo to revert if needed.
+- When asked about sales for a date or "sales yesterday", call sales_report and report the store sales total (which excludes lottery).
 - Only change data (count, adjust, price) when the owner clearly asked. After any change say exactly what changed and that he can type /undo.
 - Never place orders or contact distributors. Suggest quantities in cases.
 - Answer short and clear for a phone screen: a few lines or a small list, $ with 2 decimals. Show estimated prices with a '~'. No markdown tables; use simple lines.`;
 
-export async function askAssistant(env, userText, history = []) {
-  const today = todayLocal();
+export async function askAssistant(env, userText, history = [], todayOverride = null) {
+  const today = todayOverride || env.TODAY_OVERRIDE || todayLocal();
   const contents = [...history, { role: 'user', parts: [{ text: userText }] }];
   for (let step = 0; step < 8; step++) {
     const r = await gemini(env, {

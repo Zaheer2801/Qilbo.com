@@ -5,6 +5,7 @@ import {
   DollarSign,
   MinusCircle,
   RefreshCw,
+  Ban,
 } from "lucide-react";
 import type { ApiLedgerDetail } from "../../types";
 import { api } from "../../lib/api";
@@ -93,6 +94,22 @@ export default function ProductDetailModal({ productId, onClose, onStockUpdated 
       await api.setPrice(productId, price, detail?.product.cost);
       setStatusMsg(`Price updated to $${price.toFixed(2)} (manual)`);
       setActiveAction(null);
+      await loadProduct();
+      onStockUpdated();
+    } catch (err: any) {
+      setStatusMsg(`Error: ${err.message}`);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const handleToggleNoReorder = async () => {
+    if (!detail) return;
+    setSaving(true);
+    try {
+      const nextVal = !detail.product.do_not_reorder;
+      await api.toggleNoReorder(productId, nextVal);
+      setStatusMsg(nextVal ? "Flagged: Do Not Reorder (excluded from order suggestions)" : "Reorder restored");
       await loadProduct();
       onStockUpdated();
     } catch (err: any) {
@@ -210,6 +227,18 @@ export default function ProductDetailModal({ productId, onClose, onStockUpdated 
                   className="px-3 py-2 bg-stone-800 hover:bg-stone-700 text-stone-200 border border-stone-700 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition"
                 >
                   <DollarSign className="w-3.5 h-3.5 text-amber-400" /> /price (Manual Override)
+                </button>
+                <button
+                  type="button"
+                  onClick={handleToggleNoReorder}
+                  className={`px-3 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition border ${
+                    detail.product.do_not_reorder
+                      ? "bg-red-950/60 text-red-300 border-red-700/60"
+                      : "bg-stone-800 hover:bg-stone-700 text-stone-200 border-stone-700"
+                  }`}
+                >
+                  <Ban className="w-3.5 h-3.5 text-red-400" />
+                  {detail.product.do_not_reorder ? "Do Not Reorder (Active)" : "Do Not Reorder"}
                 </button>
               </div>
 

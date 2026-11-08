@@ -7,7 +7,6 @@ import {
   ChevronRight,
   Receipt,
   Wine,
-  HelpCircle,
   RefreshCw,
 } from "lucide-react";
 import type { ApiSummaryResponse } from "../../types";
@@ -122,10 +121,11 @@ export default function OverviewTab({
             <DollarSign className="w-3.5 h-3.5 text-amber-400" />
           </div>
           <div className="text-2xl font-bold text-white">${day.store_sales.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-          <div className="text-xs text-stone-400 mt-1 flex items-center gap-1">
-            <span>{day.scanned_items} items scanned</span>
-            <span className="text-stone-600">•</span>
-            <span className="text-amber-400">Excludes lottery</span>
+          <div className="text-xs text-stone-400 mt-1">
+            <span className="text-amber-300 font-medium">${(day.store_sales / 1.07).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> pre-tax
+          </div>
+          <div className="text-[11px] text-stone-400 mt-0.5">
+            incl. 7% tax, excl. lottery • {day.scanned_items} items scanned
           </div>
         </div>
 
@@ -151,7 +151,7 @@ export default function OverviewTab({
             {day.tracked_margin != null ? `${(day.tracked_margin * 100).toFixed(1)}%` : "–"}
           </div>
           <div className="text-xs text-stone-400 mt-1">
-            ${day.tracked_profit.toFixed(2)} profit on tracked cost SKUs
+            ${day.tracked_profit.toFixed(2)} profit on tracked items (pre-tax)
           </div>
         </div>
 
@@ -168,11 +168,9 @@ export default function OverviewTab({
           <div className="flex items-center gap-2 text-xs mt-1">
             {inv.counts.OUT > 0 && <span className="text-red-400 font-medium">{inv.counts.OUT} OUT</span>}
             {inv.counts.REORDER > 0 && <span className="text-amber-400 font-medium">{inv.counts.REORDER} Reorder</span>}
-            {inv.needs_count > 0 && (
-              <span className="text-blue-400 font-medium flex items-center gap-0.5">
-                <HelpCircle className="w-3 h-3" /> {inv.needs_count} Count
-              </span>
-            )}
+            <span className="text-stone-400 font-medium">
+              {inv.counts["NOT COUNTED"] ?? 956} not counted
+            </span>
           </div>
         </div>
       </div>

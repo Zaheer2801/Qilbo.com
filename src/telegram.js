@@ -63,6 +63,7 @@ Just type normally, e.g. <i>how many Don Julio 750 do I have?</i> or <i>I have 4
 /count 4 don julio reposado 750 – set shelf count
 /adjust -1 hennessy 375 broken – add/remove bottles
 /price 59.99 don julio 750 – set pre-tax shelf price
+/noreorder hennessy iced tea – toggle do not reorder
 /sales – yesterday's sales (/sales week or /sales 2026-11-05)
 /low – items out of stock or to reorder
 /orders – distributor order suggestions
@@ -167,6 +168,23 @@ async function onCommand(env, chatId, text) {
     await db.prepare("UPDATE products SET price=?, price_source='manual' WHERE id=?").bind(newPrice, p.id).run();
     await setSetting(db, 'last_change', JSON.stringify({ type: 'price', product_id: p.id, old: oldPrice, old_source: p.price_source }));
     return send(env, chatId, `🏷️ ${esc(pname(p))}: ${oldPrice != null ? '$' + Number(oldPrice).toFixed(2) : 'none'} → <b>$${newPrice.toFixed(2)}</b> (manual)\n(/undo to reverse)`);
+  }
+
+  if (cmd === '/noreorder') {
+    if (!arg) return send(env, chatId, 'Use: /noreorder hennessy iced tea');
+    const rows = await searchProducts(db, arg, 5);
+    if (!rows.length) return send(env, chatId, 'No product found for "' + esc(arg) + '"');
+    if (rows.length > 1 && !exactish(rows[0], arg)) {
+      return send(env, chatId, 'Which one?\n' + rows.map(p => `• ${esc(pname(p))}`).join('\n') + '\nType the full name.');
+    }
+    const p = rows[0];
+    const newFlag = p.do_not_reorder ? 0 : 1;
+    await db.prepare('UPDATE products SET do_not_reorder=? WHERE id=?').bind(newFlag, p.id).run();
+    if (newFlag === 1) {
+      return send(env, chatId, `🚫 <b>Do Not Reorder set:</b> ${esc(pname(p))} will be excluded from order suggestions.`);
+    } else {
+      return send(env, chatId, `✅ <b>Reorder restored:</b> ${esc(pname(p))} will be included in order suggestions.`);
+    }
   }
 
   if (cmd === '/undo') return send(env, chatId, await undo(env));
