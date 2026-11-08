@@ -1,5 +1,14 @@
 import express from "express";
 import cors from "cors";
+import { exec } from "child_process";
+import fs from "fs";
+import path from "path";
+import { fileURLToPath } from "url";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const LIVE_DATA_PATH = path.join(PROJECT_ROOT, "qilbo-app", "src", "data", "live_inventory.json");
 
 // Scrapes DuckDuckGo's image search (which aggregates Bing results) for a
 // product photo. This is genuinely different from the Wikimedia Commons
@@ -59,6 +68,7 @@ function pickBest(results) {
 
 const app = express();
 app.use(cors());
+app.use(express.json({ limit: "50mb" }));
 
 app.get("/health", (_req, res) => res.json({ ok: true }));
 
@@ -81,6 +91,88 @@ app.get("/api/image-search", async (req, res) => {
   } catch (err) {
     console.error(`image-search failed for "${q}":`, err.message);
     res.status(502).json({ error: "search failed", detail: err.message });
+  }
+});
+
+// --- NRS Daily Sales & Live Stock Endpoints ---
+
+// 1. Get Live Inventory & Sales State
+app.get("/api/nrs/state", (_req, res) => {
+  try {
+    if (fs.existsSync(LIVE_DATA_PATH)) {
+      const raw = fs.readFileSync(LIVE_DATA_PATH, "utf-8");
+      return res.json(JSON.parse(raw));
+    }
+    res.status(404).json({ error: "No live inventory data found. Run sync first." });
+  } catch (err) {
+    res.status(500).json({ error: "Failed to read live data", detail: err.message });
+  }
+});
+
+// 2. Trigger NRS Ingestion Pipeline (From Gmail or local sample)
+app.post("/api/nrs/sync", (req, res) => {
+  const fromGmail = req.query.gmail === "true";
+  const cmd = fromGmail
+    ? "python3 -m nrs_pipeline.sync_engine --fetch-gmail"
+    : "python3 -m nrs_pipeline.sync_engine";
+
+  console.log(`[NRS Sync] Executing: ${cmd}`);
+  exec(cmd, { cwd: PROJECT_ROOT }, (error, stdout, stderr) => {
+    if (error) {
+      console.error(`[NRS Sync Error]:`, stderr || error.message);
+      return res.status(500).json({ error: "Sync failed", detail: stderr || error.message, output: stdout });
+    }
+    console.log(`[NRS Sync Output]:\n${stdout}`);
+    
+    // Read newly exported state
+    let state = null;
+    if (fs.existsSync(LIVE_DATA_PATH)) {
+      try {
+        state = JSON.parse(fs.readFileSync(LIVE_DATA_PATH, "utf-8"));
+      } catch (e) {}
+    }
+    
+    res.json({ success: true, message: "NRS sync completed", output: stdout, state });
+  });
+});
+
+// 3. Apply Reconciled Invoice to live_inventory.json
+app.post("/api/invoices/apply", (req, res) => {
+  try {
+    const { invoice, updatedProducts } = req.body;
+    if (!updatedProducts || !Array.isArray(updatedProducts)) {
+      return res.status(400).json({ error: "missing updatedProducts array" });
+    }
+
+    if (!fs.existsSync(LIVE_DATA_PATH)) {
+      return res.status(404).json({ error: "live_inventory.json not found" });
+    }
+
+    const currentData = JSON.parse(fs.readFileSync(LIVE_DATA_PATH, "utf-8"));
+    currentData.products = updatedProducts;
+
+    // Persist invoice audit log
+    const INVOICE_HISTORY_PATH = path.join(PROJECT_ROOT, "qilbo-app", "src", "data", "invoices_history.json");
+    let history = [];
+    if (fs.existsSync(INVOICE_HISTORY_PATH)) {
+      try {
+        history = JSON.parse(fs.readFileSync(INVOICE_HISTORY_PATH, "utf-8"));
+      } catch (e) {}
+    }
+    if (invoice) {
+      history.unshift({
+        ...invoice,
+        appliedAt: new Date().toISOString(),
+      });
+      fs.writeFileSync(INVOICE_HISTORY_PATH, JSON.stringify(history, null, 2), "utf-8");
+    }
+
+    fs.writeFileSync(LIVE_DATA_PATH, JSON.stringify(currentData, null, 2), "utf-8");
+    console.log(`[Invoice Applied] Successfully updated ${updatedProducts.length} products in live_inventory.json`);
+    res.json({ success: true, message: `Updated ${updatedProducts.length} products`, products: updatedProducts });
+  } catch (err) {
+    console.error("[Invoice Apply Error]:", err.message);
+    res.status(500).json({ error: "Failed to apply invoice", detail: err.message });
   }
 });
 

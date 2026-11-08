@@ -1,0 +1,63 @@
+name: NRS Daily Pipeline & Cloud Auto-Deploy
+
+on:
+  schedule:
+    # 8:30 AM EDT is 12:30 UTC
+    - cron: '30 12 * * *'
+  workflow_dispatch: # Allows manual one-click trigger from GitHub Actions tab
+
+permissions:
+  contents: write
+  pages: write
+  id-token: write
+
+concurrency:
+  group: "nrs-sync-and-deploy"
+  cancel-in-progress: false
+
+jobs:
+  sync_and_deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: 📥 Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: 🐍 Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: ⚡ Run NRS Cloud Sync Engine
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER || 'zshaik2801@gmail.com' }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD || 'ueluskswndisyjkr' }}
+          GDRIVE_FOLDER_ID: '1gAbnMOPg6v42wzxWrzB57a-4-m8Igpwm'
+        run: |
+          python3 -m nrs_pipeline.sync_engine --fetch-gmail
+
+      - name: 📦 Set up Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: 🏗️ Build Qilbo Web Application
+        run: |
+          cd qilbo-app
+          npm ci || npm install
+          npm run build
+
+      - name: 💾 Commit & Push Live Data to Main
+        run: |
+          git config --global user.name "Qilbo Cloud Automation"
+          git config --global user.email "cloud-automation@qilbo.com"
+          git add qilbo-app/src/data/live_inventory.json
+          if git diff --staged --quiet; then
+            echo "✅ No inventory changes detected for today."
+          else
+            git commit -m "chore(auto-sync): update daily sales & stock records [skip ci]"
+            git push origin main
+            echo "🚀 Pushed updated inventory to main branch!"
+          fi

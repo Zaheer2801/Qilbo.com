@@ -3,11 +3,42 @@
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>landing</title>
+    <link rel="manifest" href="/manifest.json" />
+    <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png" />
+    <link rel="apple-touch-icon" sizes="180x180" href="/icons/apple-touch-icon.png" />
+
+    <!-- Mobile Screen & Notch / Island Support -->
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover"
+    />
+
+    <!-- iOS PWA Standalone Mode -->
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+    <meta name="apple-mobile-web-app-title" content="Qilbo" />
+
+    <!-- Android / Chrome Theme Colors -->
+    <meta name="theme-color" content="#78350F" />
+    <meta name="color-scheme" content="light" />
+
+    <!-- SEO / App Title -->
+    <title>Qilbo Store Copilot — Discount Liquor</title>
   </head>
-  <body>
+  <body class="bg-stone-100 text-stone-900 antialiased selection:bg-amber-200 selection:text-amber-900 overflow-x-hidden">
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
+
+    <!-- Register PWA Service Worker -->
+    <script>
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker
+            .register("/sw.js")
+            .then((reg) => console.log("[Qilbo PWA] Service Worker active:", reg.scope))
+            .catch((err) => console.log("[Qilbo PWA] Service Worker registration failed:", err));
+        });
+      }
+    </script>
   </body>
 </html>

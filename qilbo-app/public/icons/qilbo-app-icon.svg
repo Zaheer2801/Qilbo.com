@@ -1,0 +1,56 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="bgGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#78350F" />
+      <stop offset="60%" stopColor="#451A03" />
+      <stop offset="100%" stopColor="#1C1917" />
+    </linearGradient>
+    <linearGradient id="qilboGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#FFA800" />
+      <stop offset="45%" stopColor="#FF5E00" />
+      <stop offset="100%" stopColor="#FF2A00" />
+    </linearGradient>
+    <linearGradient id="bagGradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stopColor="#FFD000" />
+      <stop offset="100%" stopColor="#FF6000" />
+    </linearGradient>
+    <filter id="shadow" x="-10%" y="-10%" width="130%" height="130%">
+      <feDropShadow dx="0" dy="12" stdDeviation="16" flood-color="#FF5E00" flood-opacity="0.35" />
+    </filter>
+  </defs>
+
+  <!-- Squircle App Background -->
+  <rect x="0" y="0" width="512" height="512" rx="112" fill="url(#bgGradient)" />
+
+  <!-- Subtle Rim Light -->
+  <rect x="2" y="2" width="508" height="508" rx="110" fill="none" stroke="#F59E0B" stroke-width="3" stroke-opacity="0.3" />
+
+  <!-- Center Group Scaled (original is 100x100) -->
+  <g transform="translate(106, 96) scale(3.0)" filter="url(#shadow)">
+    <!-- Outer Q Swoosh Curve -->
+    <path
+      d="M 50 8 A 42 42 0 1 0 85 75 L 92 88 C 94 92 90 95 86 92 L 68 80 A 42 42 0 0 0 50 8 Z"
+      fill="url(#qilboGradient)"
+    />
+
+    <!-- Inner Cutout -->
+    <ellipse cx="48" cy="46" rx="28" ry="28" fill="#1C1917" />
+
+    <!-- Shopping Bag inside Q -->
+    <path
+      d="M 38 42 H 62 C 64 42 65 44 64.5 46 L 61 72 C 60.5 74 59 75 57 75 H 43 C 41 75 39.5 74 39 72 L 35.5 46 C 35 44 36 42 38 42 Z"
+      fill="url(#bagGradient)"
+    />
+    <!-- Handle -->
+    <path
+      d="M 44 42 V 36 C 44 33 46.5 30 50 30 C 53.5 30 56 33 56 36 V 42"
+      stroke="url(#bagGradient)"
+      stroke-width="3.5"
+      stroke-linecap="round"
+      fill="none"
+    />
+    <!-- Bag detail lines -->
+    <line x1="43" y1="52" x2="57" y2="52" stroke="#1C1917" stroke-width="2.5" stroke-linecap="round" />
+    <line x1="45" y1="58" x2="53" y2="58" stroke="#1C1917" stroke-width="2" stroke-linecap="round" />
+  </g>
+</svg>

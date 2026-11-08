@@ -255,7 +255,14 @@ export default function InventoryTab({
                           <ProductThumb product={p} iconSize={14} className="w-9 h-9 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center overflow-hidden" />
                         </td>
                         <td className={(ctl.compact ? "py-1 pr-3 " : "py-2 pr-3 ") + "relative group"}>
-                          <span className="font-medium">{titleCase(p.name)}</span>
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-medium">{titleCase(p.name)}</span>
+                            {p.isTopShelf && (
+                              <span className="px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-900 font-bold rounded border border-amber-300 inline-flex items-center">
+                                ⭐ Top Shelf
+                              </span>
+                            )}
+                          </div>
                           {p.brand && <span className="text-stone-400"> · {titleCase(p.brand)}</span>}
                           <ProductHoverPreview product={p} align="left" />
                         </td>

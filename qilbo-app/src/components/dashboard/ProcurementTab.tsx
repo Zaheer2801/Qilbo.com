@@ -53,6 +53,64 @@ export default function ProcurementTab({
 
   return (
     <div className="space-y-6">
+      {/* Top-Shelf Sales & Inventory Monitor */}
+      <div className={`${card} border-l-4 border-amber-500`}>
+        <div className="flex items-center justify-between mb-3">
+          <div className="flex items-center gap-2">
+            <span className="text-lg">⭐</span>
+            <h3 className="text-sm font-bold text-stone-900 tracking-tight">
+              Top Shelf Spirits & Premium Inventory
+            </h3>
+          </div>
+          <span className="text-xs px-2.5 py-1 bg-amber-100 text-amber-900 font-semibold rounded-full">
+            {state.products.filter((p) => p.isTopShelf).length} Top Shelf Bottles Tracked
+          </span>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+          {state.products
+            .filter((p) => p.isTopShelf)
+            .map((p) => {
+              const vel = round2(velocityPerDay(p.id, state.sales));
+              const daysLeft = vel > 0 ? (p.qty / vel).toFixed(1) : "N/A";
+              const isLow = p.qty <= p.reorderPoint;
+              return (
+                <div
+                  key={p.id}
+                  className={`p-3 rounded-lg border text-sm flex flex-col justify-between ${
+                    isLow ? "bg-red-50/60 border-red-200" : "bg-stone-50/70 border-stone-200"
+                  }`}
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <span className="font-semibold text-stone-900 block truncate max-w-[180px]">
+                        {titleCase(p.name)}
+                      </span>
+                      <span className="text-xs text-stone-500">
+                        {p.size} · ${p.sellingPrice.toFixed(2)}
+                      </span>
+                    </div>
+                    <span
+                      className={`text-xs px-2 py-0.5 rounded font-bold ${
+                        isLow ? "bg-red-600 text-white" : "bg-emerald-100 text-emerald-800"
+                      }`}
+                    >
+                      {p.qty} in stock
+                    </span>
+                  </div>
+                  <div className="mt-3 pt-2 border-t border-stone-200/60 flex items-center justify-between text-xs text-stone-600">
+                    <span>
+                      {vel > 0 ? `${vel}/day` : "0 sold today"}
+                    </span>
+                    <span className="font-medium text-stone-700">
+                      {daysLeft !== "N/A" ? `${daysLeft} days left` : "Healthy"}
+                    </span>
+                  </div>
+                </div>
+              );
+            })}
+        </div>
+      </div>
+
       <div className={card}>
         <h3 className="text-sm font-semibold mb-3">
           At or below reorder point

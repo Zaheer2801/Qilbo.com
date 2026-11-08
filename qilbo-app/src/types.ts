@@ -80,7 +80,9 @@ export interface Product {
   id: string;
   name: string;
   brand?: string; // optional — distinct from `name` for CSV imports that carry both (e.g. name "VS", brand "Hennessy")
+  department?: string; // Top-level department: Liquor, Beer, Tobacco, Beverages, Wine, Lottery
   category: string;
+  subCategory?: string; // Sub-category: Whiskey, Tequila, Cognac, Vodka, Rum, Gin, Cutwaters, etc.
   size: string; // free-form — "50ml", "750ml", "6-pack", "12oz", etc.
   qty: number;
   reorderPoint: number;
@@ -90,13 +92,24 @@ export interface Product {
   vendor?: string; // who this is procured from — optional, older/manually-added products may not have one on record
   receivedDate?: string; // when the current stock actually arrived — drives "days on shelf"; optional for the same reason
   imageUrl?: string; // optional — falls back to a placeholder icon when absent, never fabricated
+  isTopShelf?: boolean; // tagged for premium / high-value spirits and top-shelf inventory
+  upc?: string; // barcode / UPC identifier from POS
 }
 
 export interface Sale {
   id: string;
   productId: string;
+  productName?: string;
+  storeId?: string;
+  storeName?: string;
+  department?: string;
+  subCategory?: string;
+  size?: string;
   qty: number;
+  unitPrice?: number;
+  amount?: number;
   date: string;
+  isTopShelf?: boolean;
 }
 
 export interface Inquiry {

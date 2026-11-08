@@ -1,73 +1,82 @@
 import { useCallback, useState } from "react";
 import {
-  AlertTriangle,
-  Bell,
-  DollarSign,
+  BarChart3,
+  Flame,
   LayoutDashboard,
   Loader2,
   Package,
   Receipt,
-  ShoppingCart,
-  Truck,
-  Zap,
-  Globe,
   Settings,
-  ArrowLeft,
+  RefreshCw,
+  Award,
+  FileText,
 } from "lucide-react";
 import type { AppState, Product } from "./types";
 import { emptyState } from "./lib/state";
 import { loadState, saveState, clearState } from "./lib/storage";
+import liveInventory from "./data/live_inventory.json";
 
-// UI Logo Component
+// UI Components
 import { QilboLogo } from "./components/ui/QilboLogo";
-
-// Landing components
-import LandingNav from "./components/Nav";
-import Hero from "./components/Hero";
-import BeforeAfter from "./components/BeforeAfter";
-import Features from "./components/Features";
-import Statement from "./components/Statement";
-import Positioning from "./components/Positioning";
-import Workflow from "./components/Workflow";
-import FAQ from "./components/FAQ";
-import FinalCTA from "./components/FinalCTA";
-import Footer from "./components/Footer";
-
-// Dashboard components
-import Onboarding from "./components/Onboarding";
-import Overview from "./components/dashboard/Overview";
-import InventoryTab from "./components/dashboard/InventoryTab";
+import ExecutivePartnerTab from "./components/dashboard/ExecutivePartnerTab";
+import DailySalesReportTab from "./components/dashboard/DailySalesReportTab";
+import TopShelfSalesTab from "./components/dashboard/TopShelfSalesTab";
 import ProcurementTab from "./components/dashboard/ProcurementTab";
-import PricingTab from "./components/dashboard/PricingTab";
-import ExpiryTab from "./components/dashboard/ExpiryTab";
-import AlertsTab from "./components/dashboard/AlertsTab";
+import InventoryTab from "./components/dashboard/InventoryTab";
+import Overview from "./components/dashboard/Overview";
 import SettingsTab from "./components/dashboard/SettingsTab";
-
-// Combined Santé + Qilbo New Components
-import { POSRegister } from "./components/dashboard/POSRegister";
-import { DeliveryEcomHub } from "./components/dashboard/DeliveryEcomHub";
+import InvoiceUploadModal from "./components/dashboard/InvoiceUploadModal";
 
 const TABS = [
-  { id: "pos", label: "Register POS", icon: ShoppingCart, highlight: true },
-  { id: "delivery", label: "Delivery & E-Com", icon: Truck, highlight: true },
-  { id: "overview", label: "Overview", icon: LayoutDashboard },
-  { id: "inventory", label: "Inventory & Audit", icon: Package },
+  { id: "executive", label: "Executive Partner Board", icon: Award },
+  { id: "dailysales", label: "Daily Sales Report", icon: BarChart3 },
+  { id: "topshelf", label: "Top Shelf Monitor", icon: Flame },
   { id: "procurement", label: "Procurement & POs", icon: Receipt },
-  { id: "pricing", label: "Pricing & Margins", icon: DollarSign },
-  { id: "expiry", label: "Expiry Tracking", icon: AlertTriangle },
-  { id: "alerts", label: "Smart Alerts", icon: Bell },
-  { id: "settings", label: "Store Settings", icon: Settings },
+  { id: "inventory", label: "Live Stock & Audit", icon: Package },
+  { id: "overview", label: "Overview & Metrics", icon: LayoutDashboard },
+  { id: "settings", label: "Settings", icon: Settings },
 ];
 
 function initState(): AppState {
-  const loaded = loadState();
-  return loaded ? { ...emptyState(), ...loaded } : emptyState();
+  const loaded = loadState<AppState>();
+  // Prefer the freshest live inventory feed if it has more historical sales records
+  if (liveInventory && (liveInventory as any).sales && (liveInventory as any).sales.length > (loaded?.sales?.length || 0)) {
+    const base = emptyState();
+    return {
+      ...base,
+      products: (liveInventory as any).products as Product[],
+      sales: ((liveInventory as any).sales || []) as any,
+      config: {
+        ...base.config,
+        ...(loaded?.config || {}),
+        businessName: "Discount Liquor",
+        dba: "Discount Liquor",
+        vertical: "Liquor Retail",
+        onboardingComplete: true,
+      },
+    };
+  }
+  if (loaded && loaded.products && loaded.products.length > 0) {
+    return { ...emptyState(), ...loaded };
+  }
+  return emptyState();
 }
 
 export default function App() {
-  const [state, setState] = useState(initState);
-  const [tab, setTab] = useState("pos");
-  const [showLanding, setShowLanding] = useState(true);
+  const [state, setState] = useState<AppState>(initState);
+  const [tab, setTab] = useState<string>("executive");
+  const [selectedReportDate, setSelectedReportDate] = useState<string | undefined>(undefined);
+  const [syncingNrs, setSyncingNrs] = useState(false);
+  const [syncMessage, setSyncMessage] = useState<string | null>(null);
+  const [isInvoiceModalOpen, setIsInvoiceModalOpen] = useState(false);
+
+  const handleApplyInvoice = (updatedProducts: Product[], invoiceMeta: any) => {
+    updateState((prev) => ({
+      ...prev,
+      products: updatedProducts,
+    }));
+    setSyncMessage(`Invoice #${invoiceMeta.invoiceNo} applied (${invoiceMeta.totalCases} cases)`);
+  };
 
   const updateState = useCallback((updater: (prev: AppState) => AppState) => {
     setState((prev) => {
@@ -77,263 +86,273 @@ export default function App() {
     });
   }, []);
 
-  const handleCompleteSale = (items: { product: Product; qty: number }[], _total: number) => {
-    updateState((prev) => {
-      const updatedProducts = prev.products.map((p) => {
-        const cartItem = items.find((item) => item.product.id === p.id);
-        if (cartItem) {
-          return { ...p, qty: Math.max(0, p.qty - cartItem.qty) };
-        }
-        return p;
-      });
-
-      const newSales = items.map((item) => ({
-        id: `sale-${Date.now()}-${Math.random()}`,
-        productId: item.product.id,
-        qty: item.qty,
-        date: new Date().toISOString().split("T")[0],
-      }));
-
-      return {
-        ...prev,
-        products: updatedProducts,
-        sales: [...prev.sales, ...newSales],
-      };
-    });
+  const handleSyncNrs = async () => {
+    setSyncingNrs(true);
+    try {
+      const res = await fetch("http://localhost:8787/api/nrs/sync?gmail=true", { method: "POST" });
+      const data = await res.json();
+      if (data.state && data.state.products) {
+        updateState((prev) => ({
+          ...prev,
+          products: data.state.products,
+          sales: data.state.sales || prev.sales,
+        }));
+        setSyncMessage(`Synced ${data.state.products.length} products from Gmail!`);
+      } else {
+        setSyncMessage("Sync complete.");
+      }
+    } catch {
+      // Local fallback
+      if (liveInventory && (liveInventory as any).products) {
+        updateState((prev) => ({
+          ...prev,
+          products: (liveInventory as any).products,
+          sales: (liveInventory as any).sales || prev.sales,
+        }));
+        setSyncMessage("Updated from latest local report");
+      } else {
+        setSyncMessage("Run 'npm run server'");
+      }
+    } finally {
+      setSyncingNrs(false);
+      setTimeout(() => setSyncMessage(null), 4000);
+    }
   };
 
-  function completeOnboarding(cfg: any, policy: any) {
-    updateState((s) => ({ ...s, config: cfg, marginPolicy: policy }));
-  }
-
   function resetAll() {
-    const fresh = emptyState();
-    setState(fresh);
     clearState();
-    setShowLanding(true);
+    setState(emptyState());
   }
 
   if (!state) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-slate-950 text-white">
-        <Loader2 className="animate-spin text-amber-500" size={32} />
+      <div className="min-h-screen flex items-center justify-center bg-stone-50 text-stone-800">
+        <Loader2 className="animate-spin text-amber-800" size={32} />
       </div>
     );
   }
 
-  // Show landing page mode
-  if (showLanding) {
-    return (
-      <div className="bg-slate-950 text-slate-100 min-h-screen selection:bg-amber-500 selection:text-slate-950">
-        <LandingNav
-          onGetStarted={() => setShowLanding(false)}
-          onOpenPOS={() => {
-            setTab("pos");
-            setShowLanding(false);
-          }}
-        />
-        <main>
-          <Hero
-            onGetStarted={() => setShowLanding(false)}
-            onOpenPOS={() => {
-              setTab("pos");
-              setShowLanding(false);
-            }}
-          />
-          <BeforeAfter />
-          <Features />
-          <Statement />
-          <Positioning />
-          <Workflow />
-          <FAQ />
-          <FinalCTA
-            onGetStarted={() => setShowLanding(false)}
-            onOpenPOS={() => {
-              setTab("pos");
-              setShowLanding(false);
-            }}
-          />
-        </main>
-        <Footer />
-      </div>
-    );
-  }
-
-  // Show onboarding if not complete
-  if (!state.config.onboardingComplete) {
-    return (
-      <div className="min-h-screen bg-slate-950 text-white p-6 flex flex-col justify-center">
-        <div className="max-w-2xl mx-auto mb-6 text-center">
-          <QilboLogo size="lg" layout="stacked" className="mx-auto" />
-        </div>
-        <Onboarding
-          initialConfig={state.config}
-          initialMarginPolicy={state.marginPolicy}
-          onComplete={completeOnboarding}
-        />
-      </div>
-    );
-  }
-
-  // Show full interactive POS & Dashboard Workspace
   const currentTab = TABS.find((t) => t.id === tab);
-  const businessLabel = state.config.dba || state.config.businessName || "Qilbo Liquor & Retail";
+  const businessLabel = state.config.dba || state.config.businessName || "Discount Liquor (87287)";
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col md:flex-row font-sans selection:bg-amber-500 selection:text-slate-950">
-      {/* Dark Sidebar (Obsidian Theme) */}
-      <aside className="w-full md:w-64 shrink-0 border-r border-slate-800/80 bg-slate-900/90 flex flex-col justify-between backdrop-blur-xl">
+    <div className="min-h-screen bg-stone-100 text-stone-900 flex flex-col md:flex-row font-sans selection:bg-amber-200 selection:text-amber-900">
+      {/* Desktop Light Sidebar (>= md) */}
+      <aside className="hidden md:flex md:w-64 shrink-0 border-r border-stone-200 bg-stone-50 flex-col justify-between">
         <div>
-          {/* Logo & Store Selector Header */}
-          <div className="p-5 border-b border-slate-800/80 flex items-center justify-between">
-            <button
-              onClick={() => setShowLanding(true)}
-              className="hover:opacity-90 transition text-left"
-              title="Return to Landing Page"
-            >
-              <QilboLogo size="sm" showTagline={false} />
-            </button>
-            <button
-              onClick={() => setShowLanding(true)}
-              className="p-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 text-slate-400 hover:text-white transition"
-              title="Back to Landing Page"
-            >
-              <ArrowLeft className="w-4 h-4" />
-            </button>
+          {/* Brand Header */}
+          <div className="p-5 border-b border-stone-200 flex items-center justify-between bg-white">
+            <QilboLogo size="sm" showTagline={false} />
           </div>
 
-          <div className="px-4 py-3 bg-slate-950/60 border-b border-slate-800/60">
-            <span className="text-[10px] font-bold text-amber-500/80 uppercase tracking-widest block">
-              Active Store Terminal
+          {/* Active Store Banner */}
+          <div className="px-5 py-3 bg-stone-100/70 border-b border-stone-200">
+            <span className="text-[10px] font-bold text-amber-800 uppercase tracking-widest block">
+              Connected POS Merchant
             </span>
-            <span className="text-xs font-bold text-white truncate block mt-0.5">
+            <span className="text-xs font-semibold text-stone-900 truncate block mt-0.5">
               {businessLabel}
             </span>
           </div>
 
-          {/* Navigation Links */}
-          <nav className="p-3 space-y-1 overflow-y-auto max-h-[calc(100vh-220px)]">
-            <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-              Register & Operations
+          {/* Navigation */}
+          <nav className="p-3 space-y-1">
+            <div className="px-3 py-2 text-[10px] font-bold uppercase tracking-wider text-stone-400">
+              Procurement & Inventory
             </div>
-            {TABS.slice(0, 2).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-bold transition ${
-                  tab === t.id
-                    ? "bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 shadow-lg shadow-amber-500/20"
-                    : "text-slate-300 hover:bg-slate-800/80 hover:text-amber-400"
-                }`}
-              >
-                <t.icon className={`w-4 h-4 ${tab === t.id ? "text-slate-950" : "text-amber-400"}`} />
-                <span>{t.label}</span>
-              </button>
-            ))}
-
-            <div className="pt-4 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-              Inventory & Analytics
-            </div>
-            {TABS.slice(2, 8).map((t) => (
-              <button
-                key={t.id}
-                onClick={() => setTab(t.id)}
-                className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                  tab === t.id
-                    ? "bg-amber-500/15 border border-amber-500/40 text-amber-400 font-bold"
-                    : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-                }`}
-              >
-                <t.icon className={`w-4 h-4 ${tab === t.id ? "text-amber-400" : "text-slate-500"}`} />
-                <span>{t.label}</span>
-              </button>
-            ))}
-
-            <div className="pt-4 px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-              System
-            </div>
-            <button
-              onClick={() => setTab("settings")}
-              className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-xl text-xs font-semibold transition ${
-                tab === "settings"
-                  ? "bg-amber-500/15 border border-amber-500/40 text-amber-400 font-bold"
-                  : "text-slate-400 hover:bg-slate-800/60 hover:text-slate-200"
-              }`}
-            >
-              <Settings className="w-4 h-4 text-slate-500" />
-              <span>Store Settings</span>
-            </button>
+            {TABS.map((t) => {
+              const active = tab === t.id;
+              return (
+                <button
+                  key={t.id}
+                  onClick={() => setTab(t.id)}
+                  className={`w-full flex items-center gap-3 px-3.5 py-2.5 rounded-md text-xs font-medium transition ${
+                    active
+                      ? "bg-amber-800 text-amber-50 shadow-sm"
+                      : "text-stone-600 hover:bg-stone-200/60 hover:text-stone-900"
+                  }`}
+                >
+                  <t.icon className={`w-4 h-4 ${active ? "text-amber-200" : "text-stone-500"}`} />
+                  <span>{t.label}</span>
+                </button>
+              );
+            })}
           </nav>
         </div>
 
-        {/* Footer User Info */}
-        <div className="p-4 border-t border-slate-800/80 bg-slate-950/40 flex items-center justify-between">
-          <div className="flex items-center gap-2.5">
-            <div className="w-8 h-8 rounded-xl bg-amber-500/20 text-amber-400 flex items-center justify-center font-bold text-xs border border-amber-500/30">
-              Z
-            </div>
-            <div className="min-w-0">
-              <p className="text-xs font-bold text-white truncate">
-                {state.config.ownerName || "Store Owner"}
-              </p>
-              <p className="text-[10px] text-emerald-400 font-semibold">Qilbo Local POS v2.0</p>
-            </div>
+        {/* User / Status Footer */}
+        <div className="p-4 border-t border-stone-200 bg-white flex items-center justify-between text-xs">
+          <div>
+            <p className="font-semibold text-stone-900">Discount Liquor</p>
+            <p className="text-[11px] text-emerald-700 flex items-center gap-1 font-medium mt-0.5">
+              <span className="w-1.5 h-1.5 rounded-full bg-emerald-600"></span>
+              NRS Feed Connected
+            </p>
           </div>
+          <button
+            onClick={handleSyncNrs}
+            disabled={syncingNrs}
+            className="p-2 rounded-md hover:bg-stone-100 text-stone-500 hover:text-stone-800 transition disabled:opacity-50"
+            title="Sync latest email report"
+          >
+            <RefreshCw size={14} className={syncingNrs ? "animate-spin" : ""} />
+          </button>
         </div>
       </aside>
 
-      {/* Main Workspace Area */}
-      <main className="flex-1 min-w-0 flex flex-col bg-slate-950 overflow-y-auto">
-        {/* Top Header Bar */}
-        <header className="h-16 px-6 border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-xl flex items-center justify-between sticky top-0 z-30">
-          <div className="flex items-center gap-2 text-xs">
-            <span className="text-slate-400 font-medium">{businessLabel}</span>
-            <span className="text-slate-600">/</span>
-            <span className="font-extrabold text-amber-400">{currentTab?.label}</span>
+      {/* Main Content Area */}
+      <main className="flex-1 min-w-0 flex flex-col bg-stone-100">
+        {/* Mobile Top Header Bar (< md) */}
+        <header className="md:hidden px-4 py-3 border-b border-stone-200 bg-white flex items-center justify-between sticky top-0 z-20 shadow-xs">
+          <div className="flex items-center gap-2.5">
+            <QilboLogo size="sm" showTagline={false} />
+            <div className="leading-tight">
+              <span className="text-xs font-bold text-stone-900 block truncate max-w-[130px]">
+                {businessLabel}
+              </span>
+              <span className="text-[10px] text-amber-800 font-semibold uppercase tracking-wider block">
+                {currentTab?.label}
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2">
             <button
-              onClick={() => setShowLanding(true)}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-slate-800 hover:border-slate-700 bg-slate-900 text-slate-300 text-xs font-semibold transition"
+              onClick={() => setIsInvoiceModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-stone-900 text-stone-50 text-[11px] font-bold shadow-xs active:scale-95 transition cursor-pointer"
+              title="Snap or upload vendor invoice"
             >
-              <Globe className="w-3.5 h-3.5 text-amber-400" /> Landing Site View
+              <FileText size={13} className="text-amber-400" />
+              <span>Invoice</span>
             </button>
 
             <button
-              onClick={() => setTab("pos")}
-              className="inline-flex items-center gap-1.5 px-3.5 py-1.5 rounded-lg bg-gradient-to-r from-amber-500 to-orange-500 text-slate-950 text-xs font-extrabold shadow-md shadow-amber-500/20 hover:brightness-110 transition"
+              onClick={handleSyncNrs}
+              disabled={syncingNrs}
+              className="p-2 rounded-xl bg-amber-800 text-amber-50 text-xs font-medium hover:bg-amber-900 transition disabled:opacity-50 active:scale-95 shadow-xs cursor-pointer"
+              title="Sync latest NRS report"
             >
-              <Zap className="w-3.5 h-3.5 fill-slate-950" /> Fast POS Register
+              <RefreshCw size={13} className={syncingNrs ? "animate-spin" : ""} />
             </button>
           </div>
         </header>
 
-        {/* Tab Content Views */}
-        <div className="flex-1 p-6 md:p-8">
-          {tab === "pos" && (
-            <POSRegister products={state.products} onCompleteSale={handleCompleteSale} />
+        {/* Desktop Top Header Bar (>= md) */}
+        <header className="hidden md:flex h-16 px-6 md:px-8 border-b border-stone-200 bg-white items-center justify-between sticky top-0 z-20">
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-stone-400 font-medium">{businessLabel}</span>
+            <span className="text-stone-300">/</span>
+            <span className="font-bold text-amber-900">{currentTab?.label}</span>
+          </div>
+
+          <div className="flex items-center gap-3">
+            {syncMessage && (
+              <span className="text-xs font-semibold px-2.5 py-1 rounded bg-amber-50 text-amber-900 border border-amber-200">
+                {syncMessage}
+              </span>
+            )}
+
+            <button
+              onClick={() => setIsInvoiceModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-stone-900 text-stone-50 text-xs font-semibold hover:bg-stone-800 transition shadow-xs cursor-pointer border border-stone-700 active:scale-95"
+              title="Upload distributor delivery invoice (PDF, Image, CSV)"
+            >
+              <FileText size={13} className="text-amber-400" />
+              <span>Upload Invoice</span>
+            </button>
+
+            <button
+              onClick={handleSyncNrs}
+              disabled={syncingNrs}
+              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-md bg-amber-800 text-amber-50 text-xs font-medium hover:bg-amber-900 transition disabled:opacity-50"
+            >
+              <RefreshCw size={13} className={syncingNrs ? "animate-spin" : ""} />
+              {syncingNrs ? "Fetching from Gmail..." : "Sync Latest NRS Report"}
+            </button>
+          </div>
+        </header>
+
+        {/* Tab Content Area (with pb-24 for mobile bottom nav) */}
+        <div className="flex-1 p-4 sm:p-6 md:p-8 pb-24 md:pb-8 overflow-y-auto">
+          {tab === "executive" && (
+            <ExecutivePartnerTab
+              state={state}
+              onNavigateToDailyReport={(date) => {
+                setSelectedReportDate(date);
+                setTab("dailysales");
+              }}
+            />
           )}
-          {tab === "delivery" && <DeliveryEcomHub />}
-          {tab === "overview" && <Overview state={state} />}
-          {tab === "inventory" && (
-            <InventoryTab state={state} updateState={updateState} />
+          {tab === "dailysales" && (
+            <DailySalesReportTab
+              state={state}
+              onSyncNrs={handleSyncNrs}
+              isSyncing={syncingNrs}
+              syncMessage={syncMessage}
+              initialDate={selectedReportDate}
+            />
+          )}
+          {tab === "topshelf" && (
+            <TopShelfSalesTab
+              state={state}
+              onSyncNrs={handleSyncNrs}
+              isSyncing={syncingNrs}
+              syncMessage={syncMessage}
+            />
           )}
           {tab === "procurement" && (
             <ProcurementTab state={state} updateState={updateState} />
           )}
-          {tab === "pricing" && (
-            <PricingTab state={state} updateState={updateState} />
+          {tab === "inventory" && (
+            <InventoryTab state={state} updateState={updateState} />
           )}
-          {tab === "expiry" && <ExpiryTab state={state} />}
-          {tab === "alerts" && (
-            <AlertsTab state={state} updateState={updateState} />
-          )}
+          {tab === "overview" && <Overview state={state} />}
           {tab === "settings" && (
             <SettingsTab state={state} updateState={updateState} onReset={resetAll} />
           )}
         </div>
       </main>
+
+      {/* Mobile Fixed Bottom Navigation Bar (< md) */}
+      <nav className="md:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t border-stone-200 px-2 py-1.5 flex items-center justify-around shadow-lg pb-[env(safe-area-inset-bottom,8px)]">
+        {[
+          { id: "executive", label: "Board", icon: Award },
+          { id: "inventory", label: "Stock", icon: Package },
+          { id: "dailysales", label: "Sales", icon: BarChart3 },
+          { id: "topshelf", label: "Top Shelf", icon: Flame },
+          { id: "settings", label: "More", icon: Settings },
+        ].map((t) => {
+          const active = tab === t.id;
+          return (
+            <button
+              key={t.id}
+              onClick={() => setTab(t.id)}
+              className={`flex flex-col items-center justify-center py-1 px-3 rounded-xl transition cursor-pointer active:scale-95 ${
+                active
+                  ? "text-amber-900 font-bold"
+                  : "text-stone-500 hover:text-stone-800 font-medium"
+              }`}
+            >
+              <div
+                className={`w-7 h-7 rounded-lg flex items-center justify-center transition ${
+                  active ? "bg-amber-100 text-amber-900" : "text-stone-500"
+                }`}
+              >
+                <t.icon size={16} />
+              </div>
+              <span className="text-[10px] mt-0.5">{t.label}</span>
+            </button>
+          );
+        })}
+      </nav>
+
+      {/* Invoice Upload & Inventory Intake Modal */}
+      <InvoiceUploadModal
+        isOpen={isInvoiceModalOpen}
+        onClose={() => setIsInvoiceModalOpen(false)}
+        onApplyInvoice={handleApplyInvoice}
+        currentProducts={state.products}
+      />
     </div>
   );
 }
