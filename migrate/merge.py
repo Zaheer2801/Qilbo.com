@@ -354,41 +354,53 @@ def main():
 
     cur.execute("""
         WITH single_sales AS (
-            SELECT product_id, amount, COUNT(*) as cnt, MAX(sale_date) as latest_date
+            SELECT product_id, amount,
+                   COUNT(DISTINCT sale_date) as day_cnt,
+                   MAX(sale_date) as latest_date
             FROM sales
             WHERE (qty = 1.0 OR qty = 1) AND amount > 0 AND product_id IS NOT NULL AND sale_date >= ?
             GROUP BY product_id, amount
         ),
         ranked AS (
-            SELECT product_id, amount, cnt, latest_date,
-                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY cnt DESC, latest_date DESC) as rn
+            SELECT product_id, amount, day_cnt, latest_date,
+                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY day_cnt DESC, latest_date DESC) as rn
             FROM single_sales
         )
-        SELECT product_id, amount, cnt FROM ranked WHERE rn = 1
+        SELECT product_id, amount, day_cnt FROM ranked WHERE rn = 1
     """, (date_60d,))
     modes = cur.fetchall()
 
-    examples_est = []
-    for pid, amt, cnt in modes:
+    for pid, amt, day_cnt in modes:
         clean_pre_tax = round(amt / 1.07, 2)
-        cents = int(round(clean_pre_tax * 100)) % 100
-        is_clean = cents in (99, 49, 0)
-        source = 'register' if is_clean else 'estimated'
-
-        cur.execute("SELECT price_source, name, size FROM products WHERE id = ?", (pid,))
-        prow = cur.fetchone()
-        if prow[0] == 'manual':
-            continue
+        source = 'register' if day_cnt >= 2 else 'estimated'
 
         cur.execute("""
             UPDATE products
-            SET price = ?,
-                price_source = ?
+            SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
+                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE ? END
             WHERE id = ?
         """, (clean_pre_tax, source, pid))
 
-        if not is_clean:
-            examples_est.append((prow[1], prow[2], amt, clean_pre_tax, source))
+    # Multi-unit sales for products without single-unit sales in last 60 days
+    cur.execute("""
+        SELECT product_id, SUM(amount) / SUM(qty) as avg_amt
+        FROM sales
+        WHERE product_id IS NOT NULL AND sale_date >= ? AND product_id NOT IN (
+            SELECT product_id FROM sales WHERE (qty = 1.0 OR qty = 1) AND amount > 0 AND sale_date >= ?
+        )
+        GROUP BY product_id
+        HAVING SUM(qty) > 0
+    """, (date_60d, date_60d))
+    multi_sales = cur.fetchall()
+
+    for pid, avg_amt in multi_sales:
+        clean_pre_tax = round(avg_amt / 1.07, 2)
+        cur.execute("""
+            UPDATE products
+            SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
+                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'estimated' END
+            WHERE id = ?
+        """, (clean_pre_tax, pid))
 
     cur.execute("""
         UPDATE products

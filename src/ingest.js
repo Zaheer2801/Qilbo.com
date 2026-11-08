@@ -1,5 +1,5 @@
 // Daily NRS sales CSV ingest + invoice staging & posting for Discount Liquor
-import { normUpc, TAX } from './db.js';
+import { normUpc, TAX, addDays } from './db.js';
 
 export function parseCsv(text) {
   const rows = [];
@@ -223,6 +223,52 @@ export async function ingestSalesCsv(db, csvText, saleDate, fileName) {
   }
 
   await db.batch(stmts);
+
+  // Recalculate register/estimated prices for products sold (never touch manual)
+  const productIds = [...new Set(items.map(it => lookup(it.upc)?.product_id).filter(Boolean))];
+  if (productIds.length) {
+    const from60 = addDays(saleDate, -60);
+    const singleSales = (await db.prepare(`
+      SELECT product_id, amount, COUNT(DISTINCT sale_date) as day_cnt, MAX(sale_date) as latest_date
+      FROM sales
+      WHERE product_id IN (${productIds.map((_, i) => '?' + (i + 2)).join(',')})
+        AND (qty = 1.0 OR qty = 1) AND amount > 0 AND sale_date >= ?1
+      GROUP BY product_id, amount
+      ORDER BY day_cnt DESC, latest_date DESC
+    `).bind(from60, ...productIds).all()).results;
+
+    const bestSingle = new Map();
+    for (const r of singleSales) {
+      if (!bestSingle.has(r.product_id)) {
+        bestSingle.set(r.product_id, r);
+      }
+    }
+
+    const priceUpdates = [];
+    for (const pid of productIds) {
+      const match = bestSingle.get(pid);
+      if (match) {
+        const cleanPrice = +(match.amount / (1 + TAX)).toFixed(2);
+        const source = match.day_cnt >= 2 ? 'register' : 'estimated';
+        priceUpdates.push(db.prepare(`
+          UPDATE products
+          SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
+              price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE ? END
+          WHERE id = ?
+        `).bind(cleanPrice, source, pid));
+      } else {
+        priceUpdates.push(db.prepare(`
+          UPDATE products
+          SET price = CASE WHEN price_source = 'manual' THEN price
+                           ELSE (SELECT ROUND(SUM(amount) / SUM(qty) / 1.07, 2) FROM sales WHERE product_id=? AND sale_date>=?) END,
+              price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'estimated' END
+          WHERE id = ? AND (SELECT COUNT(*) FROM sales WHERE product_id=? AND sale_date>=?) > 0
+        `).bind(pid, from60, pid, pid, from60));
+      }
+    }
+    if (priceUpdates.length) await db.batch(priceUpdates);
+  }
+
   return {
     date: saleDate,
     items: items.length,
