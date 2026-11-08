@@ -14,6 +14,7 @@
     "build": "cd qilbo-app && npm run build"
   },
   "devDependencies": {
+    "puppeteer-core": "^25.16.0",
     "wrangler": "^3.114.17"
   }
 }

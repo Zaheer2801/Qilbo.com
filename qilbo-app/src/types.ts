@@ -195,3 +195,189 @@ export interface ExpiryRisk {
   tier: "Low" | "Medium" | "High";
   reason: string;
 }
+
+// ==========================================
+// QILBO CLOUDFLARE D1 LIVE LEDGER API TYPES
+// ==========================================
+
+export type InventoryStatus = 'OUT' | 'REORDER' | 'OVERSTOCK' | 'NOT SELLING' | 'NOT COUNTED' | 'OK';
+export type PriceSource = 'manual' | 'register' | 'estimated';
+
+export interface ApiInventoryItem {
+  id: number;
+  name: string;
+  clean_name: string;
+  size: string | null;
+  category: string;
+  department: string;
+  sub_category: string;
+  distributor: string | null;
+  case_size: number | null;
+  units_per_case: number | null;
+  cost: number | null;
+  price: number | null;
+  price_source: PriceSource;
+  display_price: string | null;
+  on_hand: number | null;
+  basis: string;
+  arithmetic: string;
+  needs_count: boolean;
+  sold30: number;
+  sold60: number;
+  last_sold: string | null;
+  per_week: number;
+  weeks_left: number | null;
+  reorder_point: number;
+  status: InventoryStatus;
+  avg_price: number | null;
+  margin: number | null;
+  stock_value: number | null;
+  is_top_shelf: number;
+}
+
+export interface ApiSalesSummary {
+  start: string;
+  end: string;
+  store_sales: number;
+  scanned_items: number;
+  by_category: { category: string; qty: number; amount: number }[];
+  departments: { department: string; qty: number; amount: number }[];
+  top_items: { name: string; size: string | null; qty: number; amount: number }[];
+  daily: { d: string; amount: number }[];
+  tracked_profit: number;
+  tracked_margin: number | null;
+  top_shelf?: { amount: number; qty: number; share: number };
+}
+
+export interface ApiDistributorOrder {
+  distributor: string;
+  total_cases: number;
+  total_cost: number;
+  meets_minimum: boolean;
+  minimum_rule: string;
+  fee_warning: string | null;
+  is_monday: boolean;
+  rep_text: string | null;
+  items: {
+    product_id: number;
+    name: string;
+    size: string | null;
+    on_hand: number | null;
+    sold30: number;
+    two_week_demand: number;
+    case_size: number;
+    cases_suggested: number;
+    unit_cost: number;
+    case_cost: number;
+    line_total: number;
+    status: InventoryStatus;
+  }[];
+}
+
+export interface ApiSummaryResponse {
+  day: ApiSalesSummary;
+  range: ApiSalesSummary;
+  inventory: {
+    counts: Record<InventoryStatus, number>;
+    stock_value: number;
+    tracked: number;
+    total_products: number;
+    needs_count: number;
+  };
+  pending_invoices: number;
+  distributor_orders: ApiDistributorOrder[];
+}
+
+export interface ApiInvoice {
+  id: number;
+  distributor: string;
+  invoice_no: string;
+  invoice_date: string | null;
+  total: number | null;
+  status: 'pending' | 'posted' | 'rejected';
+  source: string | null;
+  file_key: string | null;
+  created_at: string;
+  line_count: number;
+}
+
+export interface ApiInvoiceLine {
+  id: number;
+  invoice_id: number;
+  product_id: number | null;
+  description: string | null;
+  item_code: string | null;
+  upc: string | null;
+  cases: number | null;
+  bottles: number;
+  unit_cost: number | null;
+  line_total: number | null;
+  product_name?: string;
+  clean_name?: string;
+  size?: string;
+  current_cost?: number;
+  current_price?: number;
+  matched?: string;
+  how?: string;
+}
+
+export interface ApiLedgerDetail {
+  product: {
+    id: number;
+    name: string;
+    clean_name: string;
+    size: string | null;
+    category: string;
+    department: string;
+    sub_category: string;
+    distributor: string | null;
+    cost: number | null;
+    price: number | null;
+    price_source: PriceSource;
+    display_price: string | null;
+    reorder_point: number | null;
+    is_top_shelf: number;
+  };
+  upcs?: string[];
+  stock: {
+    known: boolean;
+    on_hand: number | null;
+    basis: string;
+    base: number;
+    received: number;
+    sold: number;
+    adjusted: number;
+    sales_from: string | null;
+    needs_count: boolean;
+    arithmetic: string;
+  };
+  velocity_30d?: {
+    qty: number;
+    amount: number;
+    per_week: number;
+  };
+  recent_deliveries: {
+    invoice_id: number;
+    invoice_no: string;
+    invoice_date: string;
+    distributor: string;
+    bottles: number;
+    unit_cost: number | null;
+  }[];
+  recent_sales_days: {
+    sale_date: string;
+    qty: number;
+    amount: number;
+  }[];
+  counts: {
+    counted_at: string;
+    qty: number;
+    note: string | null;
+  }[];
+  adjustments: {
+    created_at: string;
+    delta: number;
+    reason: string;
+  }[];
+}
+

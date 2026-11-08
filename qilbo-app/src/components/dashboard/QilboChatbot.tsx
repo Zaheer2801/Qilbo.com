@@ -9,6 +9,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import type { AppState, Sale, Product } from "../../types";
+import { api } from "../../lib/api";
 
 interface Message {
   id: string;
@@ -823,7 +824,7 @@ export default function QilboChatbot({
     };
   }
 
-  function handleUserQuery(q: string) {
+  async function handleUserQuery(q: string) {
     if (!q.trim()) return;
     const userMsg: Message = {
       id: Date.now().toString(),
@@ -836,19 +837,55 @@ export default function QilboChatbot({
     setInput("");
     setIsTyping(true);
 
-    setTimeout(() => {
-      const response = answerQuery(q);
-      const botMsg: Message = {
+    try {
+      if (q.trim().toLowerCase() === "/undo") {
+        const undoRes = await api.undo();
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            sender: "bot",
+            text: undoRes.message,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+          },
+        ]);
+        setIsTyping(false);
+        return;
+      }
+
+      // Try calling live Gemini 2.5 Flash backend
+      const res = await api.ask(q);
+      if (res && res.answer) {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: (Date.now() + 1).toString(),
+            sender: "bot",
+            text: res.answer,
+            timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
+            followUps: ["↩️ /undo last change", "📦 /orders", "🥃 Check Don Julio 750 stock"],
+          },
+        ]);
+        setIsTyping(false);
+        return;
+      }
+    } catch {
+      // Fallback to local catalog parser if network unavailable
+    }
+
+    const response = answerQuery(q);
+    setMessages((prev) => [
+      ...prev,
+      {
         id: (Date.now() + 1).toString(),
         sender: "bot",
         text: response.text,
         timestamp: new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }),
         dataCard: response.dataCard,
         followUps: response.followUps,
-      };
-      setMessages((prev) => [...prev, botMsg]);
-      setIsTyping(false);
-    }, 400);
+      },
+    ]);
+    setIsTyping(false);
   }
 
   const SUGGESTIONS = [

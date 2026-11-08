@@ -1,360 +1,339 @@
-import { useEffect, useState } from "react";
-import { FileSpreadsheet, Camera, Loader2, PenLine, Plus, Sparkles } from "lucide-react";
-import type { AppState, Product, QtyChangeReason } from "../../types";
-import { expiryUrgency } from "../../lib/businessLogic";
-import { enrichProductImages, type EnrichmentProgress } from "../../lib/imageEnrichment";
-import { card, inputCls, btnSmall, CategoryPill, Pagination, SortableHeader, Tag } from "../ui";
-import { titleCase } from "../../lib/format";
-import ProductDetailPanel from "./ProductDetailPanel";
-import { ProductThumb, ProductHoverPreview } from "./ProductThumb";
-import CsvImportModal from "./CsvImportModal";
-import PhotoAddModal from "./PhotoAddModal";
-import { ListControls, useListControls } from "./ListControls";
+import { useState, useEffect } from "react";
+import {
+  Search,
+  Wine,
+  RefreshCw,
+  ChevronRight,
+} from "lucide-react";
+import type { ApiInventoryItem } from "../../types";
+import { api } from "../../lib/api";
+import ProductDetailModal from "./ProductDetailModal";
 
-type ProductForm = Omit<Product, "id" | "qty" | "reorderPoint" | "purchasePrice" | "sellingPrice"> & {
-  qty: string;
-  reorderPoint: string;
-  purchasePrice: string;
-  sellingPrice: string;
-};
+interface Props {
+  initialTopShelfFilter?: boolean;
+}
 
-const emptyForm: ProductForm = {
-  name: "",
-  brand: "",
-  category: "",
-  size: "",
-  qty: "",
-  reorderPoint: "",
-  purchasePrice: "",
-  sellingPrice: "",
-  expiryDate: "",
-  vendor: "",
-  receivedDate: "",
-};
+export default function InventoryTab({ initialTopShelfFilter = false }: Props) {
+  const [items, setItems] = useState<ApiInventoryItem[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [search, setSearch] = useState("");
+  const [category, setCategory] = useState<string>("all");
+  const [distributor, setDistributor] = useState<string>("all");
+  const [statusFilter, setStatusFilter] = useState<string>("all");
+  const [topShelfOnly, setTopShelfOnly] = useState<boolean>(initialTopShelfFilter);
+  const [selectedProductId, setSelectedProductId] = useState<number | null>(null);
 
-type AddMode = null | "manual" | "csv" | "photo";
-
-export default function InventoryTab({
-  state,
-  updateState,
-  pendingProductId,
-  onPendingConsumed,
-}: {
-  state: AppState;
-  updateState: (updater: (s: AppState) => AppState) => void;
-  /** Set by the top toolbar's global product search — jumping here from a
-   * search result should open that product's detail panel immediately. */
-  pendingProductId?: string | null;
-  onPendingConsumed?: () => void;
-}) {
-  const [form, setForm] = useState<ProductForm>(emptyForm);
-  const [saleForm, setSaleForm] = useState({ productId: "", qty: "" });
-  const [selected, setSelected] = useState<Product | null>(null);
-  const [addMode, setAddMode] = useState<AddMode>(null);
-  const [catalogEnrich, setCatalogEnrich] = useState<EnrichmentProgress | null>(null);
-
-  const missingImages = state.products.filter((p) => !p.imageUrl);
-  const ctl = useListControls(state.products, (p) => p);
-  const [page, setPage] = useState(1);
-  const [pageSize, setPageSize] = useState(25);
+  const loadInventory = async () => {
+    setLoading(true);
+    try {
+      const data = await api.getInventory({
+        category: category !== "all" ? category : undefined,
+        distributor: distributor !== "all" ? distributor : undefined,
+        status: statusFilter !== "all" ? statusFilter : undefined,
+        top_shelf: topShelfOnly,
+        all: true,
+      });
+      setItems(data);
+    } catch (err) {
+      console.error("Failed to load inventory:", err);
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    if (!pendingProductId) return;
-    const product = state.products.find((p) => p.id === pendingProductId);
-    if (product) setSelected(product);
-    onPendingConsumed?.();
-  }, [pendingProductId]);
+    loadInventory();
+  }, [category, distributor, statusFilter, topShelfOnly]);
 
-  // Any filter/sort change can shrink the result set below the current
-  // page — reset to page 1 rather than showing an empty page.
-  useEffect(() => {
-    setPage(1);
-  }, [ctl.search, ctl.category, ctl.sortBy, pageSize]);
+  const filtered = items.filter((it) => {
+    if (search) {
+      const q = search.toLowerCase();
+      const matchName = it.name.toLowerCase().includes(q);
+      const matchClean = it.clean_name.toLowerCase().includes(q);
+      if (!matchName && !matchClean) return false;
+    }
+    return true;
+  });
 
-  const totalPages = Math.max(1, Math.ceil(ctl.shown.length / pageSize));
-  const currentPage = Math.min(page, totalPages);
-  const pageItems = ctl.shown.slice((currentPage - 1) * pageSize, currentPage * pageSize);
-
-  async function enrichExistingCatalog() {
-    setCatalogEnrich({ done: 0, total: missingImages.length });
-    const found = await enrichProductImages(missingImages, setCatalogEnrich);
-    updateState((s) => ({ ...s, products: s.products.map((p) => (found.has(p.id) ? { ...p, imageUrl: found.get(p.id) } : p)) }));
-    setCatalogEnrich(null);
-  }
-
-  function importCsvProducts(products: Product[]) {
-    updateState((s) => ({ ...s, products: [...s.products, ...products] }));
-    setAddMode(null);
-  }
-
-  function addPhotoProduct(p: Product) {
-    updateState((s) => ({ ...s, products: [...s.products, p] }));
-    setAddMode(null);
-  }
-
-  function removeProduct(id: string) {
-    updateState((s) => ({ ...s, products: s.products.filter((p) => p.id !== id) }));
-    setSelected(null);
-  }
-
-  function changeQty(productId: string, newQty: number, changedBy: string, reasons: QtyChangeReason[], note: string) {
-    updateState((s) => {
-      const product = s.products.find((p) => p.id === productId);
-      if (!product) return s;
-      const entry = {
-        id: "ql" + Date.now(),
-        productId,
-        productName: product.name,
-        previousQty: product.qty,
-        newQty,
-        changedBy,
-        reasons,
-        note: note || undefined,
-        date: new Date().toISOString(),
-      };
-      return {
-        ...s,
-        products: s.products.map((p) => (p.id === productId ? { ...p, qty: newQty } : p)),
-        qtyLog: [entry, ...s.qtyLog],
-      };
-    });
-    setSelected((prev) => (prev && prev.id === productId ? { ...prev, qty: newQty } : prev));
-  }
-
-  function addProduct() {
-    if (!form.name || !form.qty) return;
-    const p: Product = {
-      id: "P" + Date.now(),
-      name: form.name,
-      brand: form.brand || undefined,
-      category: form.category,
-      size: form.size,
-      expiryDate: form.expiryDate,
-      vendor: form.vendor || undefined,
-      receivedDate: form.receivedDate || undefined,
-      qty: Number(form.qty),
-      reorderPoint: Number(form.reorderPoint || 0),
-      purchasePrice: Number(form.purchasePrice || 0),
-      sellingPrice: Number(form.sellingPrice || 0),
-    };
-    updateState((s) => ({ ...s, products: [...s.products, p] }));
-    setForm(emptyForm);
-    setAddMode(null);
-  }
-
-  function logSale() {
-    if (!saleForm.productId || !saleForm.qty) return;
-    updateState((s) => ({
-      ...s,
-      products: s.products.map((p) => (p.id === saleForm.productId ? { ...p, qty: Math.max(0, p.qty - Number(saleForm.qty)) } : p)),
-      sales: [...s.sales, { id: "s" + Date.now(), productId: saleForm.productId, qty: Number(saleForm.qty), date: new Date().toISOString().slice(0, 10) }],
-    }));
-    setSaleForm({ productId: "", qty: "" });
-  }
-
-  function toggleQtySort() {
-    ctl.setSortBy(ctl.sortBy === "qtyLow" ? "qtyHigh" : "qtyLow");
-  }
-  function togglePriceSort() {
-    ctl.setSortBy(ctl.sortBy === "priceLow" ? "priceHigh" : "priceLow");
-  }
-
-  const addButtons = (
-    <>
-      <button onClick={() => setAddMode(addMode === "manual" ? null : "manual")} className={btnSmall}>
-        <PenLine size={13} />
-        Add manually
-      </button>
-      <button onClick={() => setAddMode("csv")} className={btnSmall}>
-        <FileSpreadsheet size={13} />
-        Upload CSV
-      </button>
-      <button onClick={() => setAddMode("photo")} className={btnSmall}>
-        <Camera size={13} />
-        Upload photo
-      </button>
-    </>
-  );
+  const counts = {
+    OUT: items.filter((i) => i.status === "OUT").length,
+    REORDER: items.filter((i) => i.status === "REORDER").length,
+    OVERSTOCK: items.filter((i) => i.status === "OVERSTOCK").length,
+    "NOT SELLING": items.filter((i) => i.status === "NOT SELLING").length,
+    "NOT COUNTED": items.filter((i) => i.status === "NOT COUNTED").length,
+    OK: items.filter((i) => i.status === "OK").length,
+  };
 
   return (
     <div className="space-y-6">
-      <div className={card}>
-        {state.products.length === 0 && (
-          <div className="flex items-center justify-between mb-3">
-            <h3 className="text-sm font-semibold">Products</h3>
-            <div className="flex items-center gap-1.5">{addButtons}</div>
+      {/* Top Header & Search Controls */}
+      <div className="bg-stone-900 border border-stone-800 p-4 rounded-xl space-y-3">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-base font-semibold text-white">Live Stock Ledger & Audit</h2>
+            <p className="text-xs text-stone-400">
+              Deterministic stock on hand calculated from deliveries, sales, and verified shelf counts
+            </p>
           </div>
-        )}
-
-        {catalogEnrich ? (
-          <div className="mb-3 rounded-md border border-amber-200 bg-amber-50 px-3 py-2">
-            <div className="flex items-center gap-2 text-xs text-amber-900 mb-1.5">
-              <Loader2 size={13} className="animate-spin" />
-              Enriching {catalogEnrich.total} product{catalogEnrich.total === 1 ? "" : "s"} — {Math.round((catalogEnrich.done / catalogEnrich.total) * 100)}% complete
-            </div>
-            <div className="w-full h-1.5 rounded-full bg-amber-100 overflow-hidden">
-              <div className="h-full bg-amber-700 transition-all duration-200" style={{ width: `${(catalogEnrich.done / catalogEnrich.total) * 100}%` }} />
-            </div>
-          </div>
-        ) : (
-          missingImages.length > 0 &&
-          state.products.length > 0 && (
-            <div className="flex items-center justify-between text-xs text-stone-500 mb-3 rounded-md bg-stone-50 border border-stone-200 px-3 py-2">
-              <span>
-                {missingImages.length} product{missingImages.length === 1 ? "" : "s"} missing a photo.
-              </span>
-              <button onClick={enrichExistingCatalog} className={btnSmall}>
-                <Sparkles size={13} />
-                Auto-fetch missing images
-              </button>
-            </div>
-          )
-        )}
-
-        {state.products.length === 0 ? (
-          <p className="text-stone-400 italic text-sm py-6 text-center">No products yet — add one above, or load sample data from Settings.</p>
-        ) : (
-          <>
-            <ListControls {...ctl} totalCount={state.products.length} rightSlot={addButtons} />
-            <div className="overflow-x-auto">
-              <table className="w-full text-sm">
-                <thead>
-                  <tr className="text-left border-b border-stone-100">
-                    <th className="pb-2 pr-3 w-14"></th>
-                    <th className="pb-2 pr-3">
-                      <SortableHeader label="Name" active={ctl.sortBy === "name"} direction="asc" onClick={() => ctl.setSortBy("name")} />
-                    </th>
-                    <th className="pb-2 pr-3 text-xs font-medium text-stone-400">Category</th>
-                    <th className="pb-2 pr-3 text-xs font-medium text-stone-400">Size</th>
-                    <th className="pb-2 pr-3">
-                      <SortableHeader
-                        label="Qty"
-                        active={ctl.sortBy === "qtyLow" || ctl.sortBy === "qtyHigh"}
-                        direction={ctl.sortBy === "qtyLow" ? "asc" : "desc"}
-                        onClick={toggleQtySort}
-                      />
-                    </th>
-                    <th className="pb-2 pr-3">
-                      <SortableHeader
-                        label="Price"
-                        active={ctl.sortBy === "priceLow" || ctl.sortBy === "priceHigh"}
-                        direction={ctl.sortBy === "priceLow" ? "asc" : "desc"}
-                        onClick={togglePriceSort}
-                      />
-                    </th>
-                    <th className="pb-2 text-xs font-medium text-stone-400">Status</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {pageItems.map((p) => {
-                    const lowStock = p.qty <= p.reorderPoint;
-                    const risk = expiryUrgency(p, state.sales);
-                    return (
-                      <tr key={p.id} className="border-b border-stone-50 hover:bg-stone-50/60 cursor-pointer" onClick={() => setSelected(p)}>
-                        <td className={ctl.compact ? "py-1 pr-3" : "py-2 pr-3"}>
-                          <ProductThumb product={p} iconSize={14} className="w-9 h-9 rounded-full bg-stone-100 border border-stone-200 flex items-center justify-center overflow-hidden" />
-                        </td>
-                        <td className={(ctl.compact ? "py-1 pr-3 " : "py-2 pr-3 ") + "relative group"}>
-                          <div className="flex items-center gap-1.5">
-                            <span className="font-medium">{titleCase(p.name)}</span>
-                            {p.isTopShelf && (
-                              <span className="px-1.5 py-0.5 text-[10px] bg-amber-100 text-amber-900 font-bold rounded border border-amber-300 inline-flex items-center">
-                                ⭐ Top Shelf
-                              </span>
-                            )}
-                          </div>
-                          {p.brand && <span className="text-stone-400"> · {titleCase(p.brand)}</span>}
-                          <ProductHoverPreview product={p} align="left" />
-                        </td>
-                        <td className={(ctl.compact ? "py-1 pr-3 " : "py-2 pr-3 ") + "text-stone-500"}>
-                          <CategoryPill category={p.category} />
-                        </td>
-                        <td className={(ctl.compact ? "py-1 pr-3 " : "py-2 pr-3 ") + "text-stone-500"}>{p.size || "—"}</td>
-                        <td className={(ctl.compact ? "py-1 pr-3 " : "py-2 pr-3 ") + (lowStock ? "text-red-700 font-medium" : "")}>{p.qty}</td>
-                        <td className={ctl.compact ? "py-1 pr-3" : "py-2 pr-3"}>${p.sellingPrice.toFixed(2)}</td>
-                        <td className={ctl.compact ? "py-1" : "py-2"}>
-                          {lowStock && <Tag tone="red">Low</Tag>}
-                          {!lowStock && risk?.tier && risk.tier !== "Low" && <Tag tone={risk.tier === "High" ? "red" : "amber"}>Expiry</Tag>}
-                          {!lowStock && (!risk || risk.tier === "Low") && <Tag tone="green">OK</Tag>}
-                        </td>
-                      </tr>
-                    );
-                  })}
-                </tbody>
-              </table>
-              {ctl.shown.length === 0 && <p className="text-stone-400 italic text-sm py-6 text-center">No matches for this search/filter.</p>}
-            </div>
-            {ctl.shown.length > 0 && (
-              <Pagination
-                page={currentPage}
-                totalPages={totalPages}
-                totalCount={ctl.shown.length}
-                pageSize={pageSize}
-                onPageChange={setPage}
-                onPageSizeChange={setPageSize}
-              />
-            )}
-          </>
-        )}
-      </div>
-
-      {addMode === "manual" && (
-        <div className={card}>
-          <h3 className="text-sm font-semibold mb-3">Add product manually</h3>
-          <div className="grid grid-cols-2 gap-2">
-            <input className={inputCls} placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} />
-            <input className={inputCls} placeholder="Brand" value={form.brand} onChange={(e) => setForm({ ...form, brand: e.target.value })} />
-            <input className={inputCls} placeholder="Category" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} />
-            <input className={inputCls} placeholder="Size (e.g. 750ml, 12oz)" value={form.size} onChange={(e) => setForm({ ...form, size: e.target.value })} />
-            <input className={inputCls} placeholder="Qty" value={form.qty} onChange={(e) => setForm({ ...form, qty: e.target.value })} />
-            <input className={inputCls} placeholder="Reorder point" value={form.reorderPoint} onChange={(e) => setForm({ ...form, reorderPoint: e.target.value })} />
-            <input className={inputCls} placeholder="Expiry (YYYY-MM-DD)" value={form.expiryDate} onChange={(e) => setForm({ ...form, expiryDate: e.target.value })} />
-            <input className={inputCls} placeholder="Vendor" value={form.vendor} onChange={(e) => setForm({ ...form, vendor: e.target.value })} />
-            <input
-              type="date"
-              className={inputCls}
-              value={form.receivedDate}
-              onChange={(e) => setForm({ ...form, receivedDate: e.target.value })}
-              title="Date received"
-            />
-            <input className={inputCls} placeholder="Purchase price" value={form.purchasePrice} onChange={(e) => setForm({ ...form, purchasePrice: e.target.value })} />
-            <input className={inputCls} placeholder="Selling price" value={form.sellingPrice} onChange={(e) => setForm({ ...form, sellingPrice: e.target.value })} />
-          </div>
-          <button onClick={addProduct} className={btnSmall + " mt-3"}>
-            <Plus size={14} />
-            Add product
+          <button
+            onClick={loadInventory}
+            className="p-2 self-start sm:self-auto bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg text-stone-300 transition"
+          >
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
           </button>
         </div>
-      )}
 
-      <div className={card}>
-        <h3 className="text-sm font-semibold mb-3">Log a sale</h3>
-        <select className={inputCls + " mb-2"} value={saleForm.productId} onChange={(e) => setSaleForm({ ...saleForm, productId: e.target.value })}>
-          <option value="">Select product</option>
-          {state.products.map((p) => (
-            <option key={p.id} value={p.id}>
-              {titleCase(p.name)} ({p.size})
-            </option>
-          ))}
-        </select>
-        <input className={inputCls} placeholder="Quantity sold" value={saleForm.qty} onChange={(e) => setSaleForm({ ...saleForm, qty: e.target.value })} />
-        <button onClick={logSale} className={btnSmall + " mt-3"}>
-          Log sale
-        </button>
+        {/* Filter Pills / Counters */}
+        <div className="flex flex-wrap items-center gap-1.5 pt-1 border-t border-stone-800/80">
+          <button
+            onClick={() => setStatusFilter("all")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "all" ? "bg-stone-100 text-stone-900" : "bg-stone-800 text-stone-400 hover:text-white"
+            }`}
+          >
+            All ({items.length})
+          </button>
+          <button
+            onClick={() => setStatusFilter("OUT")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "OUT" ? "bg-red-500 text-white" : "bg-stone-800 text-red-400 hover:bg-stone-700"
+            }`}
+          >
+            OUT ({counts.OUT})
+          </button>
+          <button
+            onClick={() => setStatusFilter("REORDER")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "REORDER" ? "bg-amber-500 text-stone-900" : "bg-stone-800 text-amber-400 hover:bg-stone-700"
+            }`}
+          >
+            Reorder ({counts.REORDER})
+          </button>
+          <button
+            onClick={() => setStatusFilter("NOT SELLING")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "NOT SELLING" ? "bg-stone-500 text-white" : "bg-stone-800 text-stone-400 hover:bg-stone-700"
+            }`}
+          >
+            Not Selling ({counts["NOT SELLING"]})
+          </button>
+          <button
+            onClick={() => setStatusFilter("OVERSTOCK")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "OVERSTOCK" ? "bg-purple-600 text-white" : "bg-stone-800 text-purple-400 hover:bg-stone-700"
+            }`}
+          >
+            Overstock ({counts.OVERSTOCK})
+          </button>
+          <button
+            onClick={() => setStatusFilter("NOT COUNTED")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "NOT COUNTED" ? "bg-blue-600 text-white" : "bg-stone-800 text-blue-400 hover:bg-stone-700"
+            }`}
+          >
+            Not Counted ({counts["NOT COUNTED"]})
+          </button>
+          <button
+            onClick={() => setStatusFilter("OK")}
+            className={`px-2.5 py-1 rounded-lg text-xs font-medium transition ${
+              statusFilter === "OK" ? "bg-emerald-600 text-white" : "bg-stone-800 text-emerald-400 hover:bg-stone-700"
+            }`}
+          >
+            OK ({counts.OK})
+          </button>
+        </div>
+
+        {/* Search & Filter Row */}
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-2 pt-2">
+          <div className="sm:col-span-2 relative">
+            <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-stone-500" />
+            <input
+              type="text"
+              placeholder="Search by product name or size..."
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              className="w-full bg-stone-800 border border-stone-700 rounded-lg pl-8 pr-3 py-1.5 text-xs text-white placeholder-stone-500 focus:outline-none focus:border-amber-500"
+            />
+          </div>
+
+          <div>
+            <select
+              value={category}
+              onChange={(e) => setCategory(e.target.value)}
+              className="w-full bg-stone-800 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="all">All Categories</option>
+              <option value="Liquor">Liquor</option>
+              <option value="Beer/RTD">Beer & RTD</option>
+              <option value="Wine">Wine</option>
+            </select>
+          </div>
+
+          <div>
+            <select
+              value={distributor}
+              onChange={(e) => setDistributor(e.target.value)}
+              className="w-full bg-stone-800 border border-stone-700 rounded-lg px-2.5 py-1.5 text-xs text-white focus:outline-none focus:border-amber-500"
+            >
+              <option value="all">All Distributors</option>
+              <option value="Southern Glazer's">Southern Glazer's</option>
+              <option value="Breakthru">Breakthru</option>
+              <option value="Gold Coast">Gold Coast</option>
+              <option value="Florida Distributors">Florida Dist (FDI)</option>
+              <option value="Wayne Densch">Wayne Densch</option>
+            </select>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => setTopShelfOnly(!topShelfOnly)}
+              className={`flex-1 py-1.5 px-2.5 rounded-lg text-xs font-medium border flex items-center justify-center gap-1.5 transition ${
+                topShelfOnly
+                  ? "bg-amber-500/20 border-amber-500 text-amber-300"
+                  : "bg-stone-800 border-stone-700 text-stone-400 hover:text-white"
+              }`}
+            >
+              <Wine className="w-3.5 h-3.5" /> Top Shelf
+            </button>
+          </div>
+        </div>
       </div>
 
-      {selected && (
-        <ProductDetailPanel
-          product={selected}
-          sales={state.sales}
-          qtyLog={state.qtyLog}
-          onClose={() => setSelected(null)}
-          onDelete={removeProduct}
-          onQtyChange={(newQty, changedBy, reasons, note) => changeQty(selected.id, newQty, changedBy, reasons, note)}
+      {/* Inventory Items List */}
+      <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
+        <div className="overflow-x-auto">
+          <table className="w-full text-left text-xs text-stone-300">
+            <thead className="bg-stone-950 text-stone-400 uppercase font-medium border-b border-stone-800">
+              <tr>
+                <th className="py-2.5 px-4">Product</th>
+                <th className="py-2.5 px-4 text-center">Status</th>
+                <th className="py-2.5 px-4 text-right">On Hand</th>
+                <th className="py-2.5 px-4 text-right">Pre-Tax Price</th>
+                <th className="py-2.5 px-4 text-right">Velocity</th>
+                <th className="py-2.5 px-4 text-right">Weeks Left</th>
+                <th className="py-2.5 px-4 text-center">Audit</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-stone-800">
+              {filtered.slice(0, 150).map((it) => {
+                const isOut = it.status === "OUT";
+                const isReorder = it.status === "REORDER";
+                const isNotCounted = it.status === "NOT COUNTED";
+
+                return (
+                  <tr
+                    key={it.id}
+                    onClick={() => setSelectedProductId(it.id)}
+                    className="hover:bg-stone-800/40 cursor-pointer transition"
+                  >
+                    <td className="py-2.5 px-4">
+                      <div className="font-medium text-white flex items-center gap-1.5">
+                        <span>{it.clean_name || it.name}</span>
+                        {it.is_top_shelf === 1 && (
+                          <span className="text-[10px] bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded border border-amber-500/30">
+                            Top Shelf
+                          </span>
+                        )}
+                        {it.needs_count && (
+                          <span className="text-[10px] bg-blue-500/20 text-blue-300 px-1.5 py-0.2 rounded border border-blue-500/30">
+                            Count Needed
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] text-stone-400 flex items-center gap-2 mt-0.5">
+                        <span>{it.size || "unit"}</span>
+                        <span>•</span>
+                        <span>{it.distributor || "Unknown"}</span>
+                        <span>•</span>
+                        <span className="font-mono text-stone-400">{it.basis}</span>
+                      </div>
+                    </td>
+
+                    <td className="py-2.5 px-4 text-center">
+                      <span
+                        className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                          isOut
+                            ? "bg-red-500/20 text-red-400 border border-red-500/30"
+                            : isReorder
+                            ? "bg-amber-500/20 text-amber-300 border border-amber-500/30"
+                            : isNotCounted
+                            ? "bg-blue-500/20 text-blue-300 border border-blue-500/30"
+                            : it.status === "NOT SELLING"
+                            ? "bg-stone-500/20 text-stone-400 border border-stone-500/30"
+                            : it.status === "OVERSTOCK"
+                            ? "bg-purple-500/20 text-purple-300 border border-purple-500/30"
+                            : "bg-emerald-500/20 text-emerald-400 border border-emerald-500/30"
+                        }`}
+                      >
+                        {it.status}
+                      </span>
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right">
+                      {it.on_hand != null ? (
+                        <span
+                          className={`font-mono font-bold text-sm ${
+                            isOut
+                              ? "text-red-400"
+                              : isReorder
+                              ? "text-amber-400"
+                              : "text-white"
+                          }`}
+                        >
+                          {it.on_hand}
+                        </span>
+                      ) : (
+                        <span className="text-stone-400 text-xs italic">Not Counted</span>
+                      )}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right font-medium text-stone-200">
+                      <span className={it.price_source === "estimated" ? "text-stone-400" : "text-amber-300"}>
+                        {it.display_price || "–"}
+                      </span>
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right text-stone-400">
+                      {it.per_week > 0 ? `~${it.per_week}/wk` : "0/wk"}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-right text-stone-400">
+                      {it.weeks_left != null ? (
+                        <span className={it.weeks_left < 2 ? "text-red-400 font-semibold" : "text-stone-300"}>
+                          {it.weeks_left.toFixed(1)} wks
+                        </span>
+                      ) : (
+                        "–"
+                      )}
+                    </td>
+
+                    <td className="py-2.5 px-4 text-center">
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          setSelectedProductId(it.id);
+                        }}
+                        className="p-1 rounded hover:bg-stone-700 text-stone-400 hover:text-white transition"
+                      >
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      {/* Product Detail & Audit Modal */}
+      {selectedProductId && (
+        <ProductDetailModal
+          productId={selectedProductId}
+          onClose={() => setSelectedProductId(null)}
+          onStockUpdated={loadInventory}
         />
       )}
-      {addMode === "csv" && <CsvImportModal onClose={() => setAddMode(null)} onImport={importCsvProducts} />}
-      {addMode === "photo" && <PhotoAddModal onClose={() => setAddMode(null)} onAdd={addPhotoProduct} />}
     </div>
   );
 }
