@@ -59,7 +59,7 @@ def main():
 
     # Enhanced Schema with Qilbo columns and pack factors
     enhanced_schema = """
-    CREATE TABLE products (
+    CREATE TABLE IF NOT EXISTS products (
       id             INTEGER PRIMARY KEY AUTOINCREMENT,
       name           TEXT NOT NULL,
       clean_name     TEXT,
@@ -81,19 +81,19 @@ def main():
       created_at     TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE product_upcs (
+    CREATE TABLE IF NOT EXISTS product_upcs (
       upc        TEXT PRIMARY KEY,
       product_id INTEGER NOT NULL REFERENCES products(id)
     );
 
-    CREATE TABLE product_codes (
+    CREATE TABLE IF NOT EXISTS product_codes (
       distributor TEXT NOT NULL,
       code        TEXT NOT NULL,
       product_id  INTEGER NOT NULL REFERENCES products(id),
       PRIMARY KEY (distributor, code)
     );
 
-    CREATE TABLE invoices (
+    CREATE TABLE IF NOT EXISTS invoices (
       id           INTEGER PRIMARY KEY AUTOINCREMENT,
       distributor  TEXT,
       invoice_no   TEXT,
@@ -107,7 +107,7 @@ def main():
       UNIQUE (distributor, invoice_no)
     );
 
-    CREATE TABLE invoice_lines (
+    CREATE TABLE IF NOT EXISTS invoice_lines (
       id          INTEGER PRIMARY KEY AUTOINCREMENT,
       invoice_id  INTEGER NOT NULL REFERENCES invoices(id) ON DELETE CASCADE,
       product_id  INTEGER REFERENCES products(id),
@@ -120,7 +120,7 @@ def main():
       line_total  REAL
     );
 
-    CREATE TABLE sales (
+    CREATE TABLE IF NOT EXISTS sales (
       sale_date  TEXT NOT NULL,
       upc        TEXT NOT NULL,
       name       TEXT,
@@ -130,7 +130,7 @@ def main():
       PRIMARY KEY (sale_date, upc)
     );
 
-    CREATE TABLE dept_sales (
+    CREATE TABLE IF NOT EXISTS dept_sales (
       sale_date  TEXT NOT NULL,
       department TEXT NOT NULL,
       qty        REAL,
@@ -138,7 +138,7 @@ def main():
       PRIMARY KEY (sale_date, department)
     );
 
-    CREATE TABLE stock_counts (
+    CREATE TABLE IF NOT EXISTS stock_counts (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       product_id INTEGER NOT NULL REFERENCES products(id),
       qty        REAL NOT NULL,
@@ -146,7 +146,7 @@ def main():
       note       TEXT
     );
 
-    CREATE TABLE adjustments (
+    CREATE TABLE IF NOT EXISTS adjustments (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       product_id INTEGER NOT NULL REFERENCES products(id),
       delta      REAL NOT NULL,
@@ -154,28 +154,28 @@ def main():
       created_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE processed_files (
+    CREATE TABLE IF NOT EXISTS processed_files (
       name         TEXT PRIMARY KEY,
       processed_at TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE chat_log (
+    CREATE TABLE IF NOT EXISTS chat_log (
       id         INTEGER PRIMARY KEY AUTOINCREMENT,
       role       TEXT,
       text       TEXT,
       created_at TEXT DEFAULT (datetime('now'))
     );
 
-    CREATE TABLE settings (
+    CREATE TABLE IF NOT EXISTS settings (
       key   TEXT PRIMARY KEY,
       value TEXT
     );
 
-    CREATE INDEX idx_sales_product ON sales(product_id, sale_date);
-    CREATE INDEX idx_lines_product ON invoice_lines(product_id);
-    CREATE INDEX idx_counts_product ON stock_counts(product_id, counted_at);
-    CREATE INDEX idx_adj_product ON adjustments(product_id, created_at);
-    CREATE INDEX idx_products_name ON products(name);
+    CREATE INDEX IF NOT EXISTS idx_sales_product ON sales(product_id, sale_date);
+    CREATE INDEX IF NOT EXISTS idx_lines_product ON invoice_lines(product_id);
+    CREATE INDEX IF NOT EXISTS idx_counts_product ON stock_counts(product_id, counted_at);
+    CREATE INDEX IF NOT EXISTS idx_adj_product ON adjustments(product_id, created_at);
+    CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
     """
     cur.executescript(enhanced_schema)
 
@@ -347,33 +347,53 @@ def main():
         WHERE price IS NOT NULL AND distributor = "Southern Glazer's" AND cost IS NOT NULL
     """)
 
+    cur.execute("SELECT MAX(sale_date) FROM sales")
+    max_sale_date = cur.fetchone()[0] or "2026-11-05"
+    cur.execute("SELECT DATE(?, '-60 days')", (max_sale_date,))
+    date_60d = cur.fetchone()[0]
+
     cur.execute("""
         WITH single_sales AS (
-            SELECT product_id, amount,
-                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY sale_date DESC) as rn
+            SELECT product_id, amount, COUNT(*) as cnt, MAX(sale_date) as latest_date
             FROM sales
-            WHERE qty = 1.0 AND product_id IS NOT NULL AND amount > 0
+            WHERE (qty = 1.0 OR qty = 1) AND amount > 0 AND product_id IS NOT NULL AND sale_date >= ?
+            GROUP BY product_id, amount
+        ),
+        ranked AS (
+            SELECT product_id, amount, cnt, latest_date,
+                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY cnt DESC, latest_date DESC) as rn
+            FROM single_sales
         )
-        SELECT product_id, amount FROM single_sales WHERE rn = 1
-    """)
-    single_sales = cur.fetchall()
-    reg_price_count = 0
-    for row in single_sales:
-        pid = row[0]
-        amt = row[1]
+        SELECT product_id, amount, cnt FROM ranked WHERE rn = 1
+    """, (date_60d,))
+    modes = cur.fetchall()
+
+    examples_est = []
+    for pid, amt, cnt in modes:
         clean_pre_tax = round(amt / 1.07, 2)
+        cents = int(round(clean_pre_tax * 100)) % 100
+        is_clean = cents in (99, 49, 0)
+        source = 'register' if is_clean else 'estimated'
+
+        cur.execute("SELECT price_source, name, size FROM products WHERE id = ?", (pid,))
+        prow = cur.fetchone()
+        if prow[0] == 'manual':
+            continue
+
         cur.execute("""
             UPDATE products
-            SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
-                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'register' END
+            SET price = ?,
+                price_source = ?
             WHERE id = ?
-        """, (clean_pre_tax, pid))
-        reg_price_count += 1
+        """, (clean_pre_tax, source, pid))
+
+        if not is_clean:
+            examples_est.append((prow[1], prow[2], amt, clean_pre_tax, source))
 
     cur.execute("""
         UPDATE products
         SET price_source = 'estimated'
-        WHERE (price_source IS NULL OR price_source = '') AND price IS NOT NULL
+        WHERE price IS NOT NULL AND price_source NOT IN ('manual', 'register')
     """)
     cur.execute("SELECT price_source, COUNT(*) FROM products GROUP BY price_source")
     for ps, cnt in cur.fetchall():

@@ -12,5 +12,8 @@
     "server": "node server/index.js",
     "web": "cd qilbo-app && npm run dev",
     "build": "cd qilbo-app && npm run build"
+  },
+  "devDependencies": {
+    "wrangler": "^3.114.17"
   }
 }

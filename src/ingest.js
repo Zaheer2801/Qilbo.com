@@ -173,12 +173,15 @@ export async function ingestSalesCsv(db, csvText, saleDate, fileName) {
     const ins = [...unknown].map(([upc, item]) => {
       const { clean_name, size } = extractSizeAndCleanName(item.name);
       const unitPrice = item.qty > 0 && item.amt > 0 ? +(item.amt / item.qty / (1 + TAX)).toFixed(2) : null;
+      const cents = unitPrice != null ? Math.round(unitPrice * 100) % 100 : null;
+      const isClean = cents === 99 || cents === 49 || cents === 0;
+      const priceSource = isClean ? 'register' : 'estimated';
       const { department, sub_category, category } = classifyProduct(item.name, unitPrice || 0);
       const is_top_shelf = isTopShelfItem(item.name, department, sub_category, unitPrice || 0) ? 1 : 0;
       return db.prepare(`
         INSERT INTO products(name, clean_name, size, category, sub_category, department, is_top_shelf, price, price_source)
         VALUES(?,?,?,?,?,?,?,?,?) RETURNING id, category
-      `).bind(item.name, clean_name, size, category, sub_category, department, is_top_shelf, unitPrice, 'register');
+      `).bind(item.name, clean_name, size, category, sub_category, department, is_top_shelf, unitPrice, priceSource);
     });
     const res = await db.batch(ins);
     const ups = [];

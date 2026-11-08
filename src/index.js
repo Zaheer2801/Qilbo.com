@@ -217,40 +217,34 @@ export default {
     }
   },
 
-  // Scheduled Cron Jobs
+  // Scheduled Cron Jobs (Runs at :45 every hour, plus :30 on Mondays)
   async scheduled(event, env, ctx) {
     if (!env.OWNER_CHAT_ID) return;
 
-    // Check silent window: Eustis FL is America/New_York (silent between 10 PM and 8 AM)
-    const nowHour = Number(new Intl.DateTimeFormat('en-US', {
+    // Check America/New_York local time (handles EDT/EST automatically all year)
+    const nyFmt = new Intl.DateTimeFormat('en-US', {
       timeZone: 'America/New_York',
+      hour12: false,
+      weekday: 'short',
       hour: 'numeric',
-      hour12: false
-    }).format(new Date()));
+      minute: 'numeric'
+    });
+    const parts = Object.fromEntries(nyFmt.formatToParts(new Date()).map(p => [p.type, p.value]));
+    const localHour = Number(parts.hour);
+    const localMinute = Number(parts.minute);
+    const localWeekday = parts.weekday; // 'Mon', 'Tue', etc.
 
-    if (nowHour < 8 || nowHour >= 22) {
-      console.log(`Silent window active (hour ${nowHour}), skipping notifications.`);
+    // Silent window: between 10 PM (22) and 8 AM (8)
+    if (localHour < 8 || localHour >= 22) {
       return;
     }
 
     const today = todayLocal();
     const yesterday = addDays(today, -1);
-    const sameDayLastWeek = addDays(yesterday, -7);
 
-    // Sales comparison: Yesterday vs same weekday last week
-    const ySales = await salesSummary(env.DB, yesterday, yesterday);
-    const lastWeekSales = await salesSummary(env.DB, sameDayLastWeek, sameDayLastWeek);
-
-    // Low stock / out of stock
-    const inv = await inventory(env.DB, { onlyTracked: true });
-    const low = inv.filter(r => r.status === 'OUT' || r.status === 'REORDER');
-
-    // Pending invoices
-    const pend = await env.DB.prepare("SELECT COUNT(*) n FROM invoices WHERE status='pending'").first();
-
-    // Check if Monday 9:30 AM weekly report
-    const dayOfWeek = new Date(today + 'T12:00:00Z').getUTCDay(); // 1 = Monday
-    if (dayOfWeek === 1 && nowHour === 9) {
+    // 1. Monday 9:30 AM Weekly Report (triggered at :30 on Mondays)
+    if (localWeekday === 'Mon' && localHour === 9 && localMinute >= 25 && localMinute <= 35) {
+      const inv = await inventory(env.DB, { onlyTracked: true });
       const weekStart = addDays(yesterday, -6);
       const weekSales = await salesSummary(env.DB, weekStart, yesterday);
       const deadStock = inv.filter(r => r.status === 'NOT SELLING');
@@ -278,37 +272,47 @@ export default {
       return;
     }
 
-    // Daily Morning Report
-    let text = `☀️ <b>Good morning! Yesterday's Report (${yesterday})</b>\n`;
-    if (ySales.daily.length) {
-      const diff = ySales.store_sales - lastWeekSales.store_sales;
-      const pct = lastWeekSales.store_sales > 0 ? (diff / lastWeekSales.store_sales) * 100 : 0;
-      const trend = diff >= 0 ? `+${money(diff)} (+${pct.toFixed(1)}%)` : `${money(diff)} (${pct.toFixed(1)}%)`;
+    // 2. Daily 9:45 AM Morning Report (triggered at :45 daily)
+    if (localHour === 9 && localMinute >= 40 && localMinute <= 50) {
+      const sameDayLastWeek = addDays(yesterday, -7);
+      const ySales = await salesSummary(env.DB, yesterday, yesterday);
+      const lastWeekSales = await salesSummary(env.DB, sameDayLastWeek, sameDayLastWeek);
+      const inv = await inventory(env.DB, { onlyTracked: true });
+      const low = inv.filter(r => r.status === 'OUT' || r.status === 'REORDER');
+      const pend = await env.DB.prepare("SELECT COUNT(*) n FROM invoices WHERE status='pending'").first();
 
-      text += `Store Sales (no lottery): <b>${money(ySales.store_sales)}</b>\n`;
-      text += `Vs same day last week (${sameDayLastWeek}): ${money(lastWeekSales.store_sales)} (${trend})\n`;
-      if (ySales.tracked_margin != null) {
-        text += `Tracked Profit: ${money(ySales.tracked_profit)} (${(ySales.tracked_margin * 100).toFixed(0)}% margin)\n`;
+      let text = `☀️ <b>Good morning! Yesterday's Report (${yesterday})</b>\n`;
+      if (ySales.daily.length) {
+        const diff = ySales.store_sales - lastWeekSales.store_sales;
+        const pct = lastWeekSales.store_sales > 0 ? (diff / lastWeekSales.store_sales) * 100 : 0;
+        const trend = diff >= 0 ? `+${money(diff)} (+${pct.toFixed(1)}%)` : `${money(diff)} (${pct.toFixed(1)}%)`;
+
+        text += `Store Sales (no lottery): <b>${money(ySales.store_sales)}</b>\n`;
+        text += `Vs same day last week (${sameDayLastWeek}): ${money(lastWeekSales.store_sales)} (${trend})\n`;
+        if (ySales.tracked_margin != null) {
+          text += `Tracked Profit: ${money(ySales.tracked_profit)} (${(ySales.tracked_margin * 100).toFixed(0)}% margin)\n`;
+        }
+        if (ySales.top_items.length) {
+          text += `\n<b>Top 5 Items:</b>\n` +
+            ySales.top_items.slice(0, 5).map(it => `• ${esc(it.name)} ×${it.qty} (${money(it.amount)})`).join('\n') + '\n';
+        }
+      } else {
+        text += `<i>Yesterday's sales report has not arrived yet.</i>\n`;
       }
-      if (ySales.top_items.length) {
-        text += `\n<b>Top 5 Items:</b>\n` +
-          ySales.top_items.slice(0, 5).map(it => `• ${esc(it.name)} ×${it.qty} (${money(it.amount)})`).join('\n') + '\n';
+
+      if (low.length) {
+        text += `\n🚨 <b>Out / Reorder Alert (${low.length} items):</b>\n` +
+          low.slice(0, 8).map(r => `• ${esc(pname(r))}: <b>${r.on_hand}</b> left (~${r.per_week}/wk)`).join('\n') +
+          (low.length > 8 ? `\n<i>...and ${low.length - 8} more (/low)</i>` : '');
       }
-    } else {
-      text += `<i>Yesterday's sales report has not arrived yet.</i>\n`;
-    }
 
-    if (low.length) {
-      text += `\n🚨 <b>Out / Reorder Alert (${low.length} items):</b>\n` +
-        low.slice(0, 8).map(r => `• ${esc(pname(r))}: <b>${r.on_hand}</b> left (~${r.per_week}/wk)`).join('\n') +
-        (low.length > 8 ? `\n<i>...and ${low.length - 8} more (/low)</i>` : '');
-    }
+      if (pend && pend.n > 0) {
+        text += `\n\n⏳ <b>${pend.n} invoice(s) waiting for your review.</b>`;
+      }
 
-    if (pend && pend.n > 0) {
-      text += `\n\n⏳ <b>${pend.n} invoice(s) waiting for your review.</b>`;
+      ctx.waitUntil(send(env, env.OWNER_CHAT_ID, text));
+      return;
     }
-
-    ctx.waitUntil(send(env, env.OWNER_CHAT_ID, text));
   }
 };
 
