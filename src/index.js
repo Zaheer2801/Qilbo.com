@@ -336,13 +336,16 @@ async function handleApi(req, env, url, ctx) {
     const y = addDays(todayLocal(), -1);
     const last = await db.prepare('SELECT MAX(sale_date) d FROM sales').first();
     const day = q.get('date') || last?.d || y;
+    const start = q.get('start');
+    const end = q.get('end');
     const days = Number(q.get('days') || 30);
-    const rangeStart = addDays(day, -(days - 1));
+    const rangeStart = start || addDays(day, -(days - 1));
+    const rangeEnd = end || day;
 
     const [one, range, inv, pend, orders] = await Promise.all([
-      salesSummary(db, day, day),
-      salesSummary(db, rangeStart, day),
-      inventory(db, { onlyTracked: false }),
+      salesSummary(db, rangeStart, rangeEnd),
+      salesSummary(db, rangeStart, rangeEnd),
+      inventory(db, { onlyTracked: false, start: rangeStart, end: rangeEnd }),
       db.prepare("SELECT COUNT(*) n FROM invoices WHERE status='pending'").first(),
       distributorOrderSuggestions(db)
     ]);

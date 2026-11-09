@@ -466,11 +466,11 @@ export default function App() {
         </div>
       </div>
 
-      {/* Floating AI Assistant Button */}
+      {/* Floating AI Assistant Button (Positioned left on mobile so it never covers right-side status badges) */}
       <button
         onClick={() => setIsChatOpen(!isChatOpen)}
         title="Open Qilbo AI Assistant"
-        className="fixed right-4 bottom-16 lg:bottom-6 z-40 p-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl transition transform hover:scale-105 flex items-center justify-center border-2 border-white dark:border-slate-800"
+        className="fixed left-4 bottom-20 lg:left-auto lg:right-6 lg:bottom-6 z-40 p-3.5 bg-blue-600 hover:bg-blue-700 text-white rounded-full shadow-xl transition transform hover:scale-105 flex items-center justify-center border-2 border-white dark:border-slate-800"
       >
         <MessageSquare className="w-5 h-5" />
       </button>

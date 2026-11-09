@@ -1,16 +1,15 @@
 import { useState, useEffect } from "react";
 import {
-  Calendar,
   Search,
   DollarSign,
   TrendingUp,
   RefreshCw,
-  Wine,
   ShoppingBag,
 } from "lucide-react";
 import type { ApiSalesSummary } from "../../types";
 import { api } from "../../lib/api";
 import { getCategoryConfig } from "../../lib/colors";
+import DateRangePicker, { type DateRange, computePresets } from "./DateRangePicker";
 
 interface Props {
   selectedDate: string;
@@ -18,31 +17,43 @@ interface Props {
 }
 
 export default function DailySalesTab({ selectedDate, onDateChange }: Props) {
+  const presets = computePresets(selectedDate || "2026-11-05");
+  const [currentRange, setCurrentRange] = useState<DateRange>({
+    startDate: selectedDate || presets.today.start,
+    endDate: selectedDate || presets.today.end,
+    label: "Today",
+  });
+
   const [salesData, setSalesData] = useState<ApiSalesSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [search, setSearch] = useState("");
 
-  const loadDailySales = async (date: string) => {
+  const loadSales = async (start: string, end: string) => {
     setLoading(true);
     try {
-      const data = await api.getSales(date, date);
+      const data = await api.getSales(start, end);
       setSalesData(data);
     } catch (err) {
-      console.error("Failed to load daily sales:", err);
+      console.error("Failed to load sales:", err);
     } finally {
       setLoading(false);
     }
   };
 
   useEffect(() => {
-    loadDailySales(selectedDate);
-  }, [selectedDate]);
+    loadSales(currentRange.startDate, currentRange.endDate);
+  }, [currentRange.startDate, currentRange.endDate]);
+
+  const handleRangeChange = (newRange: DateRange) => {
+    setCurrentRange(newRange);
+    onDateChange(newRange.endDate);
+  };
 
   if (loading && !salesData) {
     return (
       <div className="flex flex-col items-center justify-center py-24 text-slate-400">
         <RefreshCw className="w-8 h-8 animate-spin mb-3 text-blue-600" />
-        <p className="text-sm font-medium">Loading daily sales report...</p>
+        <p className="text-sm font-medium">Loading register sales report...</p>
       </div>
     );
   }
@@ -56,29 +67,25 @@ export default function DailySalesTab({ selectedDate, onDateChange }: Props) {
 
   return (
     <div className="space-y-6">
-      {/* Header with Date Picker */}
+      {/* Header with Range Picker */}
       <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 rounded-2xl shadow-sm flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div>
           <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
-            Daily Register Sales Report
+            Register Sales Report
           </h2>
           <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
-            Verified POS Register Sales for {selectedDate} • Pre-tax calculations include 7% FL tax separation
+            Verified POS Register Sales for {currentRange.label} ({currentRange.startDate} → {currentRange.endDate}) • Pre-tax calculations include 7% FL tax separation
           </p>
         </div>
 
         <div className="flex items-center gap-2">
-          <div className="flex items-center bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl px-3 py-1.5 text-xs text-slate-700 dark:text-slate-300">
-            <Calendar className="w-4 h-4 mr-2 text-slate-400" />
-            <input
-              type="date"
-              value={selectedDate}
-              onChange={(e) => onDateChange(e.target.value)}
-              className="bg-transparent font-medium text-slate-900 dark:text-white border-0 focus:outline-none cursor-pointer"
-            />
-          </div>
+          <DateRangePicker
+            currentRange={currentRange}
+            onChange={handleRangeChange}
+            referenceDate="2026-11-05"
+          />
           <button
-            onClick={() => loadDailySales(selectedDate)}
+            onClick={() => loadSales(currentRange.startDate, currentRange.endDate)}
             className="p-2.5 bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 transition shadow-sm"
           >
             <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
@@ -133,41 +140,59 @@ export default function DailySalesTab({ selectedDate, onDateChange }: Props) {
             <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-5 rounded-2xl shadow-sm">
               <div className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-1 flex items-center justify-between">
                 <span>Top Shelf Share</span>
-                <Wine className="w-4 h-4 text-amber-500" />
+                <span className="text-[10px] font-bold px-1.5 py-0.5 bg-amber-100 text-amber-800 rounded">Liquor</span>
               </div>
               <div className="text-2xl font-black text-slate-900 dark:text-white">
-                {s.top_shelf ? `$${s.top_shelf.amount.toFixed(2)}` : "–"}
+                {s.top_shelf ? `${(s.top_shelf.share * 100).toFixed(1)}%` : "–"}
               </div>
-              <div className="text-xs text-amber-600 font-semibold mt-1">
-                {s.top_shelf ? `${(s.top_shelf.share * 100).toFixed(1)}% of store sales` : "–"}
+              <div className="text-xs text-slate-500 mt-1">
+                ${s.top_shelf ? s.top_shelf.amount.toFixed(2) : "0"} ({s.top_shelf?.qty || 0} bottles)
               </div>
-              <div className="text-[11px] text-slate-400 mt-0.5">
-                {s.top_shelf?.qty || 0} premium bottles
-              </div>
+              <div className="text-[11px] text-slate-400 mt-0.5">Premium high-margin stock</div>
             </div>
           </div>
 
-          {/* Breakdown Section: Category Distribution & Top Selling Items */}
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-            {/* Category Breakdown Table */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm">
-              <h3 className="text-base font-bold text-slate-900 dark:text-white pb-3 border-b border-slate-100 dark:border-slate-800">
-                Sales by Category ({s.by_category.length})
+          {/* Department Breakdown */}
+          {s.departments && s.departments.length > 0 && (
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 rounded-2xl shadow-sm space-y-4">
+              <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                Register Department Sales
               </h3>
-              <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3">
+                {s.departments.map((d) => (
+                  <div key={d.department} className="p-3 bg-slate-50 dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                    <div className="text-xs text-slate-500 dark:text-slate-400 truncate font-semibold">{d.department}</div>
+                    <div className="text-lg font-black text-slate-900 dark:text-white mt-1">
+                      ${d.amount.toFixed(2)}
+                    </div>
+                    <div className="text-[11px] text-slate-400 mt-0.5 font-mono">{d.qty} transactions</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
+          {/* Sales by Category & Top Sellers */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Sales by Category */}
+            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 rounded-2xl shadow-sm">
+              <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
+                <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                  Sales by Category ({s.by_category.length})
+                </h3>
+              </div>
+              <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-2 max-h-96 overflow-y-auto">
                 {s.by_category.map((c) => {
                   const conf = getCategoryConfig(c.category);
-                  const pct = s.store_sales ? (c.amount / s.store_sales) * 100 : 0;
                   return (
                     <div key={c.category} className="py-2.5 flex items-center justify-between text-xs">
-                      <div className="flex items-center gap-2.5 min-w-0">
-                        <span className="w-3 h-3 rounded-full shrink-0" style={{ backgroundColor: conf.hex }} />
+                      <div className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-full shrink-0" style={{ backgroundColor: conf.hex }} />
                         <span className="font-semibold text-slate-800 dark:text-slate-200 truncate">{c.category}</span>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0 font-mono">
-                        <span className="text-slate-400">{c.qty} sold</span>
-                        <span className="font-bold text-slate-900 dark:text-white">${c.amount.toFixed(2)}</span>
-                        <span className="text-[10px] text-slate-400 w-10 text-right">{pct.toFixed(1)}%</span>
+                      <div className="text-right">
+                        <div className="font-mono font-bold text-slate-900 dark:text-white">${c.amount.toFixed(2)}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{c.qty} sold</div>
                       </div>
                     </div>
                   );
@@ -175,38 +200,43 @@ export default function DailySalesTab({ selectedDate, onDateChange }: Props) {
               </div>
             </div>
 
-            {/* Top 15 Items List */}
-            <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 shadow-sm flex flex-col justify-between">
+            {/* Top Items Table */}
+            <div className="lg:col-span-2 bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 rounded-2xl shadow-sm flex flex-col justify-between">
               <div>
-                <div className="flex items-center justify-between pb-3 border-b border-slate-100 dark:border-slate-800">
-                  <h3 className="text-base font-bold text-slate-900 dark:text-white">Top Scanned Products</h3>
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pb-3 border-b border-slate-100 dark:border-slate-800">
+                  <h3 className="text-sm font-extrabold text-slate-900 dark:text-white uppercase tracking-wider">
+                    Top Selling Products ({filteredItems.length})
+                  </h3>
                   <div className="relative">
-                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-2.5 top-2" />
+                    <Search className="w-3.5 h-3.5 absolute left-3 top-2.5 text-slate-400" />
                     <input
                       type="text"
-                      placeholder="Filter items..."
+                      placeholder="Search items..."
                       value={search}
                       onChange={(e) => setSearch(e.target.value)}
-                      className="bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-lg pl-8 pr-3 py-1 text-xs text-slate-800 dark:text-white focus:outline-none focus:border-blue-500"
+                      className="pl-8 pr-3 py-1.5 text-xs bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 rounded-xl focus:outline-none focus:ring-1 focus:ring-blue-500 w-full sm:w-48 text-slate-800 dark:text-white"
                     />
                   </div>
                 </div>
 
-                <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-3 max-h-96 overflow-y-auto pr-1">
+                <div className="divide-y divide-slate-100 dark:divide-slate-800 mt-2 max-h-96 overflow-y-auto">
                   {filteredItems.map((it, idx) => (
-                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800/40 px-1 rounded transition">
-                      <div className="min-w-0 pr-2">
-                        <div className="font-bold text-slate-900 dark:text-white truncate">
-                          {idx + 1}. {it.name}
-                        </div>
-                        <div className="text-[11px] text-slate-400 font-mono">{it.size || "unit"}</div>
+                    <div key={idx} className="py-2.5 flex items-center justify-between text-xs hover:bg-slate-50 dark:hover:bg-slate-800/50 px-2 rounded-lg transition">
+                      <div className="min-w-0 pr-4">
+                        <div className="font-bold text-slate-800 dark:text-slate-200 truncate">{it.name}</div>
+                        <div className="text-[10px] text-slate-400">{it.size || "Standard"}</div>
                       </div>
-                      <div className="flex items-center gap-3 shrink-0 font-mono text-right">
-                        <span className="text-slate-500 font-semibold">{it.qty} sold</span>
-                        <span className="font-bold text-slate-900 dark:text-white">${it.amount.toFixed(2)}</span>
+                      <div className="text-right shrink-0">
+                        <div className="font-mono font-bold text-slate-900 dark:text-white">${it.amount.toFixed(2)}</div>
+                        <div className="text-[10px] text-slate-400 font-mono">{it.qty} sold</div>
                       </div>
                     </div>
                   ))}
+                  {filteredItems.length === 0 && (
+                    <div className="py-8 text-center text-xs text-slate-400">
+                      No matching products found.
+                    </div>
+                  )}
                 </div>
               </div>
             </div>

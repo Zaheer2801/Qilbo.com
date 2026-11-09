@@ -17,8 +17,17 @@ import {
 import type { ApiPurchaseOrder } from "../../types";
 import { api } from "../../lib/api";
 import { getDistributorBadge } from "../../lib/colors";
+import DateRangePicker, { type DateRange, computePresets } from "./DateRangePicker";
 
 export default function OrdersTab() {
+  const [currentRange, setCurrentRange] = useState<DateRange>(() => {
+    const presets = computePresets("2026-11-05");
+    return {
+      startDate: presets.last30.start,
+      endDate: presets.last30.end,
+      label: "Last 30 days",
+    };
+  });
   const [draftPOs, setDraftPOs] = useState<ApiPurchaseOrder[]>([]);
   const [poHistory, setPoHistory] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -280,7 +289,13 @@ export default function OrdersTab() {
             </div>
           </div>
 
-          <div className="flex items-center gap-2 self-start sm:self-auto">
+          <div className="flex flex-wrap items-center gap-2 self-start sm:self-auto">
+            <DateRangePicker
+              currentRange={currentRange}
+              onChange={setCurrentRange}
+              referenceDate="2026-11-05"
+            />
+
             <button
               onClick={() => setShowHistory(!showHistory)}
               className={`px-3.5 py-2 rounded-xl text-xs font-bold border transition flex items-center gap-1.5 shadow-sm ${

@@ -425,6 +425,20 @@ export async function salesSummary(db, start, end) {
       WHERE s.sale_date BETWEEN ? AND ? AND p.is_top_shelf = 1 AND (p.category = 'Spirits' OR p.category IN ('Tequila/Mezcal', 'Cognac/Brandy', 'Whiskey/Bourbon/Scotch', 'Vodka', 'Rum', 'Gin') OR p.sub_category IN ('Tequila/Mezcal', 'Cognac/Brandy', 'Whiskey', 'Vodka', 'Rum', 'Gin')) AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
   const storeSales = +(tot.amount + deptNonLotto).toFixed(2);
 
+  // Previous period comparison
+  const diffDays = Math.round((new Date(end).getTime() - new Date(start).getTime()) / (1000 * 86400));
+  const prevEnd = addDays(start, -1);
+  const prevStart = addDays(prevEnd, -diffDays);
+
+  const prevTot = await db.prepare(`SELECT COALESCE(SUM(s.amount),0) amount, COALESCE(SUM(s.qty),0) qty FROM sales s
+      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') <> 'Lottery' AND s.upc NOT LIKE '798028%'`).bind(prevStart, prevEnd).first();
+  const prevDept = (await db.prepare(`SELECT department, SUM(qty) qty, SUM(amount) amount FROM dept_sales WHERE sale_date BETWEEN ? AND ?
+      GROUP BY department`).bind(prevStart, prevEnd).all()).results;
+  const prevDeptNonLotto = prevDept.filter(d => !/lotter/i.test(d.department)).reduce((a, d) => a + d.amount, 0);
+  const prevStoreSales = +(prevTot.amount + prevDeptNonLotto).toFixed(2);
+  const salesChangePct = prevStoreSales > 0 ? +(((storeSales - prevStoreSales) / prevStoreSales) * 100).toFixed(1) : null;
+  const itemsChangePct = prevTot.qty > 0 ? +(((tot.qty - prevTot.qty) / prevTot.qty) * 100).toFixed(1) : null;
+
   const topBrands = (await db.prepare(`SELECT COALESCE(p.brand, 'Unknown') brand, COALESCE(p.category, 'Other') category, SUM(s.qty) qty, SUM(s.amount) amount FROM sales s
       LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') <> 'Lottery' AND s.upc NOT LIKE '798028%' AND p.brand IS NOT NULL
       GROUP BY 1 ORDER BY amount DESC LIMIT 10`).bind(start, end).all()).results;
@@ -433,6 +447,8 @@ export async function salesSummary(db, start, end) {
     start,
     end,
     store_sales: storeSales,
+    scanned_sales: +tot.amount.toFixed(2),
+    dept_sales: +deptNonLotto.toFixed(2),
     scanned_items: tot.qty,
     by_category: byCat,
     departments: dept,
@@ -445,7 +461,15 @@ export async function salesSummary(db, start, end) {
       amount: +topShelf.amount.toFixed(2),
       qty: topShelf.qty,
       share: storeSales ? +(topShelf.amount / storeSales).toFixed(3) : 0
-    }
+    },
+    prev_period: {
+      start: prevStart,
+      end: prevEnd,
+      store_sales: prevStoreSales,
+      scanned_items: prevTot.qty
+    },
+    sales_change_pct: salesChangePct,
+    items_change_pct: itemsChangePct
   };
 }
 

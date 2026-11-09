@@ -248,6 +248,8 @@ export interface ApiSalesSummary {
   start: string;
   end: string;
   store_sales: number;
+  scanned_sales?: number;
+  dept_sales?: number;
   scanned_items: number;
   by_category: { category: string; qty: number; amount: number }[];
   departments: { department: string; qty: number; amount: number }[];
@@ -257,6 +259,14 @@ export interface ApiSalesSummary {
   tracked_profit: number;
   tracked_margin: number | null;
   top_shelf?: { amount: number; qty: number; share: number };
+  prev_period?: {
+    start: string;
+    end: string;
+    store_sales: number;
+    scanned_items: number;
+  };
+  sales_change_pct?: number | null;
+  items_change_pct?: number | null;
 }
 
 export interface ApiDistributorOrder {

@@ -61,7 +61,7 @@ export const QilboLogo: React.FC<QilboLogoProps> = ({
         />
 
         {/* Inner Cutout */}
-        <ellipse cx="48" cy="46" rx="28" ry="28" fill="#0A0D14" />
+        <ellipse cx="48" cy="46" rx="28" ry="28" className="fill-white dark:fill-slate-900" />
 
         {/* Shopping Bag inside Q */}
         <path
@@ -77,8 +77,8 @@ export const QilboLogo: React.FC<QilboLogoProps> = ({
           fill="none"
         />
         {/* Bag detail lines */}
-        <line x1="43" y1="52" x2="57" y2="52" stroke="#0A0D14" strokeWidth="2.5" strokeLinecap="round" />
-        <line x1="45" y1="58" x2="53" y2="58" stroke="#0A0D14" strokeWidth="2" strokeLinecap="round" />
+        <line x1="43" y1="52" x2="57" y2="52" className="stroke-white dark:stroke-slate-900" strokeWidth="2.5" strokeLinecap="round" />
+        <line x1="45" y1="58" x2="53" y2="58" className="stroke-white dark:stroke-slate-900" strokeWidth="2" strokeLinecap="round" />
       </svg>
     </div>
   );

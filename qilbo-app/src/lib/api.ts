@@ -71,10 +71,12 @@ export const api = {
   },
 
   // Summary & Overview
-  getSummary: (date?: string, days = 30): Promise<ApiSummaryResponse> => {
+  getSummary: (date?: string, days = 30, start?: string, end?: string): Promise<ApiSummaryResponse> => {
     const params = new URLSearchParams();
     if (date) params.set("date", date);
     if (days) params.set("days", String(days));
+    if (start) params.set("start", start);
+    if (end) params.set("end", end);
     return request<ApiSummaryResponse>(`/api/summary?${params.toString()}`);
   },
 
