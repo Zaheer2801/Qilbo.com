@@ -350,7 +350,13 @@ export function fuzzyMatch(products, text) {
 export function parseBeerPackUnits(desc) {
   const s = (desc || '').toUpperCase();
 
-  // "A/B/C" pattern, e.g. 3/8/16, 6/4/16, 2/12/12, 2/12/1, 2/6/500
+  // Tetra packs / singles: e.g. 2/6/500ML TETRA -> 2 * 6 = 12 singles
+  if (s.includes('TETRA') || s.includes('500ML')) {
+    const m = s.match(/\b(\d+)\/(\d+)\b/);
+    if (m) return parseInt(m[1], 10) * parseInt(m[2], 10);
+  }
+
+  // "A/B/C" pattern, e.g. 3/8/16, 6/4/16, 2/12/12, 2/12/1
   // units per case = A (number of retail packs)
   const abc = s.match(/\b(\d+)\/(\d+)\/(\d+[A-Z]*|\d+)\b/);
   if (abc) {
@@ -439,7 +445,7 @@ export async function stageInvoice(db, inv, meta = {}) {
 
     if (earlierUnits != null) {
       unitsPerCase = earlierUnits;
-      if (newProposedUnits !== earlierUnits) {
+      if (modelUnits != null && modelUnits !== earlierUnits && parsedUnits !== earlierUnits && catalogUnits !== earlierUnits) {
         warning = '⚠ units differ from last invoice';
       }
     }

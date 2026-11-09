@@ -27,7 +27,8 @@ import {
   undo,
   invoicePreview,
   pname,
-  money
+  money,
+  alertGeminiFailure
 } from './telegram.js';
 
 const json = (data, status = 200) => new Response(JSON.stringify(data), {
@@ -517,7 +518,13 @@ async function handleApi(req, env, url, ctx) {
     const question = String(body.question || '');
     const history = Array.isArray(body.history) ? body.history : [];
     const today = body.today || env.TODAY_OVERRIDE;
-    return json({ answer: await askAssistant(env, question, history, today) });
+    try {
+      return json({ answer: await askAssistant(env, question, history, today) });
+    } catch (e) {
+      console.error('[Gemini AI Error]', e);
+      ctx.waitUntil(alertGeminiFailure(env, e));
+      return json({ answer: 'AI is unavailable right now – commands like /stock still work' });
+    }
   }
 
   // POST /api/invoice/post

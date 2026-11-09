@@ -95,11 +95,34 @@ export async function handleUpdate(env, update, ctx) {
 
     await tg(env, 'sendChatAction', { chat_id: chatId, action: 'typing' });
     const history = await recentHistory(env);
-    const answer = await askAssistant(env, text, history);
-    await log(env, 'bot', answer);
-    await send(env, chatId, esc(answer));
+    try {
+      const answer = await askAssistant(env, text, history);
+      await log(env, 'bot', answer);
+      await send(env, chatId, esc(answer));
+    } catch (e) {
+      console.error('[Gemini AI Error]', e);
+      await send(env, chatId, 'AI is unavailable right now – commands like /stock still work');
+      await alertGeminiFailure(env, e);
+    }
   } catch (e) {
     await send(env, chatId, '⚠️ ' + esc(e.message || e));
+  }
+}
+
+export async function alertGeminiFailure(env, err) {
+  try {
+    const today = todayLocal();
+    const lastAlert = await getSetting(env.DB, 'last_gemini_error_alert');
+    if (lastAlert !== today && env.OWNER_CHAT_ID) {
+      await setSetting(env.DB, 'last_gemini_error_alert', today);
+      await send(
+        env,
+        env.OWNER_CHAT_ID,
+        `⚠️ <b>Gemini AI Error Alert</b>\nModel: <code>${env.GEMINI_MODEL}</code>\nError: <code>${esc(err?.message || err)}</code>\nPlease update the model or check API limits.`
+      );
+    }
+  } catch (alertErr) {
+    console.error('Failed to send Gemini failure alert:', alertErr);
   }
 }
 
