@@ -5,6 +5,7 @@ import fs from 'fs';
 const ARTIFACT_DIR = '/Users/zaheer/.gemini/antigravity/brain/bb53ef40-ba15-4c16-bc5e-bb40c12a9fff';
 const SCREENSHOTS_DIR = '/Users/zaheer/Daily Reports/screenshots';
 const CHROME_PATH = '/Applications/Google Chrome.app/Contents/MacOS/Google Chrome';
+const TARGET_URL = 'https://discount-liquor.zshaik2801.workers.dev';
 
 const TABS = [
   { id: 'overview', name: 'Overview' },
@@ -30,14 +31,9 @@ async function main() {
   page.on('pageerror', err => console.log('PAGE ERROR:', err.message));
 
   // 1. Load desktop and login
-  console.log('Navigating to http://localhost:5173...');
+  console.log(`Navigating to ${TARGET_URL}...`);
   await page.setViewport({ width: 1280, height: 850, deviceScaleFactor: 2 });
-  await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
-  await page.evaluate(() => {
-    if (window.caches) {
-      caches.keys().then(keys => Promise.all(keys.map(k => caches.delete(k))));
-    }
-  });
+  await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
   await new Promise((r) => setTimeout(r, 2000));
 
   const loginInput = await page.$('input[type="password"]');
@@ -53,26 +49,22 @@ async function main() {
     const submitBtn = await page.$('button[type="submit"]');
     await submitBtn.click();
     console.log('Waiting for dashboard after login...');
-    await page.waitForSelector('aside button', { timeout: 15000 });
-    await new Promise((r) => setTimeout(r, 2000));
+    await page.waitForSelector('aside button', { timeout: 20000 });
+    await new Promise((r) => setTimeout(r, 2500));
   }
 
-  // 2. Desktop Screenshots
-  console.log('Capturing Desktop screenshots...');
-  for (const tab of TABS) {
-    console.log(`Navigating to tab: ${tab.name} (${tab.id}) on Desktop...`);
-    await page.evaluate((tabLabel) => {
-      const buttons = Array.from(document.querySelectorAll('aside button, header nav button'));
-      const btn = buttons.find((b) => b.textContent && b.textContent.includes(tabLabel));
-      if (btn) btn.click();
-    }, tab.name);
-
-    await new Promise((r) => setTimeout(r, 2000));
-    const outPath = path.join(ARTIFACT_DIR, `desktop_${tab.id}.png`);
-    await page.screenshot({ path: outPath, fullPage: false });
-    fs.copyFileSync(outPath, path.join(SCREENSHOTS_DIR, `desktop_${tab.id}.png`));
-    console.log(`Saved ${outPath}`);
-  }
+  // 2. Desktop Screenshots: Overview (Last 7 days)
+  console.log('Capturing Desktop Overview (Last 7 days)...');
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('aside button'));
+    const btn = buttons.find((b) => b.textContent && b.textContent.includes('Overview'));
+    if (btn) btn.click();
+  });
+  await new Promise((r) => setTimeout(r, 2500));
+  const desktopOverviewPath = path.join(ARTIFACT_DIR, 'desktop_overview.png');
+  await page.screenshot({ path: desktopOverviewPath, fullPage: false });
+  fs.copyFileSync(desktopOverviewPath, path.join(SCREENSHOTS_DIR, 'desktop_overview.png'));
+  console.log(`Saved ${desktopOverviewPath}`);
 
   // 3. Desktop Inventory with VODKA Selected
   console.log('Capturing Desktop Inventory with Vodka selected...');
@@ -80,18 +72,16 @@ async function main() {
     const navBtn = Array.from(document.querySelectorAll('aside button')).find(b => b.textContent && b.textContent.includes('Inventory'));
     if (navBtn) navBtn.click();
   });
-  await new Promise((r) => setTimeout(r, 1000));
+  await new Promise((r) => setTimeout(r, 1500));
 
-  // Select Vodka in category selector or sidebar
+  // Click Vodka in sidebar categories
   await page.evaluate(() => {
-    // Try sidebar category button first
     const sideBtns = Array.from(document.querySelectorAll('aside button'));
     const vodkaSide = sideBtns.find(b => b.textContent && b.textContent.includes('Vodka'));
     if (vodkaSide) {
       vodkaSide.click();
       return;
     }
-    // Or select dropdown
     const select = document.querySelector('select');
     if (select) {
       select.value = 'Vodka';
@@ -104,48 +94,53 @@ async function main() {
   fs.copyFileSync(desktopVodkaPath, path.join(SCREENSHOTS_DIR, 'desktop_inventory_vodka.png'));
   console.log(`Saved ${desktopVodkaPath}`);
 
-  // 4. Desktop Orders with Draft PO
-  console.log('Capturing Desktop Orders with Draft PO...');
+  // 4. Desktop Orders
+  console.log('Capturing Desktop Orders...');
   await page.evaluate(() => {
     const navBtn = Array.from(document.querySelectorAll('aside button')).find(b => b.textContent && b.textContent.includes('Orders'));
     if (navBtn) navBtn.click();
   });
-  await new Promise((r) => setTimeout(r, 2000));
-  const desktopOrdersDraftPath = path.join(ARTIFACT_DIR, 'desktop_orders_draft_po.png');
-  await page.screenshot({ path: desktopOrdersDraftPath, fullPage: false });
-  fs.copyFileSync(desktopOrdersDraftPath, path.join(SCREENSHOTS_DIR, 'desktop_orders_draft_po.png'));
-  console.log(`Saved ${desktopOrdersDraftPath}`);
+  await new Promise((r) => setTimeout(r, 2500));
+  const desktopOrdersPath = path.join(ARTIFACT_DIR, 'desktop_orders.png');
+  await page.screenshot({ path: desktopOrdersPath, fullPage: false });
+  fs.copyFileSync(desktopOrdersPath, path.join(SCREENSHOTS_DIR, 'desktop_orders.png'));
+  console.log(`Saved ${desktopOrdersPath}`);
 
   // 5. Mobile Run (390px wide)
   console.log('Switching to mobile viewport (390x844)...');
   await page.setViewport({ width: 390, height: 844, deviceScaleFactor: 2, isMobile: true, hasTouch: true });
-  await page.goto('http://localhost:5173', { waitUntil: 'domcontentloaded' });
+  await page.goto(TARGET_URL, { waitUntil: 'domcontentloaded' });
   await new Promise((r) => setTimeout(r, 2000));
 
-  // Capture standard mobile tabs
-  for (const tab of TABS) {
-    console.log(`Navigating to tab: ${tab.name} (${tab.id}) on Mobile...`);
-    await page.evaluate((tabLabel) => {
-      const buttons = Array.from(document.querySelectorAll('div.fixed.bottom-0 button, .fixed.bottom-0 button'));
-      const btn = buttons.find((b) => b.textContent && b.textContent.trim().toLowerCase() === tabLabel.toLowerCase());
-      if (btn) btn.click();
-    }, tab.name);
-
-    await new Promise((r) => setTimeout(r, 2000));
-    const outPath = path.join(ARTIFACT_DIR, `mobile_${tab.id}.png`);
-    await page.screenshot({ path: outPath, fullPage: false });
-    fs.copyFileSync(outPath, path.join(SCREENSHOTS_DIR, `mobile_${tab.id}.png`));
-    console.log(`Saved ${outPath}`);
-  }
+  // Capture Mobile Overview
+  console.log('Capturing Mobile Overview...');
+  await page.evaluate(() => {
+    const buttons = Array.from(document.querySelectorAll('.fixed.bottom-0 button, div.fixed.bottom-0 button'));
+    const btn = buttons.find((b) => b.textContent && b.textContent.trim().toLowerCase() === 'overview');
+    if (btn) btn.click();
+  });
+  await new Promise((r) => setTimeout(r, 2000));
+  const mobileOverviewPath = path.join(ARTIFACT_DIR, 'mobile_overview.png');
+  await page.screenshot({ path: mobileOverviewPath, fullPage: false });
+  fs.copyFileSync(mobileOverviewPath, path.join(SCREENSHOTS_DIR, 'mobile_overview.png'));
+  console.log(`Saved ${mobileOverviewPath}`);
 
   // 6. Mobile Inventory with VODKA Selected
   console.log('Capturing Mobile Inventory with Vodka selected...');
   await page.evaluate(() => {
-    const buttons = Array.from(document.querySelectorAll('div.fixed.bottom-0 button, .fixed.bottom-0 button'));
+    const buttons = Array.from(document.querySelectorAll('.fixed.bottom-0 button, div.fixed.bottom-0 button'));
     const btn = buttons.find((b) => b.textContent && b.textContent.trim().toLowerCase() === 'inventory');
     if (btn) btn.click();
   });
   await new Promise((r) => setTimeout(r, 1500));
+
+  // Open mobile filters and choose Vodka
+  await page.evaluate(() => {
+    // Click "Filters" toggle button
+    const filterBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.includes('Filters'));
+    if (filterBtn) filterBtn.click();
+  });
+  await new Promise((r) => setTimeout(r, 500));
 
   await page.evaluate(() => {
     const selects = Array.from(document.querySelectorAll('select'));
@@ -156,35 +151,34 @@ async function main() {
     }
   });
   await new Promise((r) => setTimeout(r, 2000));
-  // Scroll down so the 2-line cards are centered in the mobile viewport
-  await page.evaluate(() => window.scrollBy(0, 420));
-  await new Promise((r) => setTimeout(r, 800));
+
+  // Close filter drawer if open
+  await page.evaluate(() => {
+    const filterBtn = Array.from(document.querySelectorAll('button')).find(b => b.textContent && b.textContent.includes('Filters'));
+    if (filterBtn) filterBtn.click();
+  });
+  await new Promise((r) => setTimeout(r, 1000));
 
   const mobileVodkaPath = path.join(ARTIFACT_DIR, 'mobile_inventory_vodka.png');
   await page.screenshot({ path: mobileVodkaPath, fullPage: false });
   fs.copyFileSync(mobileVodkaPath, path.join(SCREENSHOTS_DIR, 'mobile_inventory_vodka.png'));
   console.log(`Saved ${mobileVodkaPath}`);
 
-  // 7. Mobile Orders with Draft PO
-  console.log('Capturing Mobile Orders with Draft PO...');
+  // 7. Mobile Orders
+  console.log('Capturing Mobile Orders...');
   await page.evaluate(() => {
-    window.scrollTo(0, 0);
-    const buttons = Array.from(document.querySelectorAll('div.fixed.bottom-0 button, .fixed.bottom-0 button'));
+    const buttons = Array.from(document.querySelectorAll('.fixed.bottom-0 button, div.fixed.bottom-0 button'));
     const btn = buttons.find((b) => b.textContent && b.textContent.trim().toLowerCase() === 'orders');
     if (btn) btn.click();
   });
-  await new Promise((r) => setTimeout(r, 2000));
-  // Scroll down so draft PO items and controls are centered in the mobile viewport
-  await page.evaluate(() => window.scrollBy(0, 420));
-  await new Promise((r) => setTimeout(r, 800));
-
-  const mobileOrdersDraftPath = path.join(ARTIFACT_DIR, 'mobile_orders_draft_po.png');
-  await page.screenshot({ path: mobileOrdersDraftPath, fullPage: false });
-  fs.copyFileSync(mobileOrdersDraftPath, path.join(SCREENSHOTS_DIR, 'mobile_orders_draft_po.png'));
-  console.log(`Saved ${mobileOrdersDraftPath}`);
+  await new Promise((r) => setTimeout(r, 2500));
+  const mobileOrdersPath = path.join(ARTIFACT_DIR, 'mobile_orders.png');
+  await page.screenshot({ path: mobileOrdersPath, fullPage: false });
+  fs.copyFileSync(mobileOrdersPath, path.join(SCREENSHOTS_DIR, 'mobile_orders.png'));
+  console.log(`Saved ${mobileOrdersPath}`);
 
   await browser.close();
-  console.log('All screenshots captured and verified successfully!');
+  console.log('All requested screenshots captured and saved successfully!');
 }
 
 main().catch((err) => {
