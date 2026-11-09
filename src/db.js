@@ -348,7 +348,39 @@ export async function inventory(db, { category, subCategory, distributor, brand,
       stock_value: r.cost ? +(Math.max(r.on_hand ?? 0, 0) * r.cost).toFixed(2) : null
     });
   }
-  return out;
+
+  function sortTier(item) {
+    if (item.status === 'OUT') return 1;
+    if (item.status === 'REORDER') return 2;
+    const isZeroSold = (item.sold_range || item.sold30 || 0) === 0;
+    if (item.status === 'NOT COUNTED' && isZeroSold) return 5;
+    if ((item.sold_range || item.sold30 || 0) > 0) return 3;
+    return 4; // Rest (tracked items with 0 sold)
+  }
+
+  return out.sort((a, b) => {
+    const tierA = sortTier(a);
+    const tierB = sortTier(b);
+    if (tierA !== tierB) return tierA - tierB;
+
+    const nameA = a.clean_name || a.name || '';
+    const nameB = b.clean_name || b.name || '';
+
+    if (tierA === 1) { // OUT
+      return (b.sold_range - a.sold_range) || (b.sold60 - a.sold60) || nameA.localeCompare(nameB);
+    }
+    if (tierA === 2) { // REORDER
+      return ((a.weeks_left ?? 999) - (b.weeks_left ?? 999)) || (b.sold_range - a.sold_range) || nameA.localeCompare(nameB);
+    }
+    if (tierA === 3) { // Best sellers by units sold in range
+      return (b.sold_range - a.sold_range) || ((b.sales_range_amount || 0) - (a.sales_range_amount || 0)) || nameA.localeCompare(nameB);
+    }
+    if (tierA === 4) { // Rest (tracked, 0 sold)
+      return ((b.on_hand ?? 0) - (a.on_hand ?? 0)) || nameA.localeCompare(nameB);
+    }
+    // Tier 5: Not counted, 0 sold at the bottom
+    return nameA.localeCompare(nameB);
+  });
 }
 
 export async function salesSummary(db, start, end) {
