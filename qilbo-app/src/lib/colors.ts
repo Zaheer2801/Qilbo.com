@@ -2,6 +2,65 @@
 // =====================================================================
 
 export const CATEGORY_COLORS: Record<string, { hex: string; bg: string; text: string; border: string; dot: string; label: string }> = {
+  // 7 Groups
+  "Spirits": {
+    hex: "#8B5CF6",
+    bg: "bg-purple-50 dark:bg-purple-950/40",
+    text: "text-purple-700 dark:text-purple-300",
+    border: "border-purple-200 dark:border-purple-800",
+    dot: "bg-purple-500",
+    label: "Spirits"
+  },
+  "Beer & RTD": {
+    hex: "#EAB308",
+    bg: "bg-amber-50 dark:bg-amber-950/40",
+    text: "text-amber-800 dark:text-amber-300",
+    border: "border-amber-300 dark:border-amber-800",
+    dot: "bg-amber-500",
+    label: "Beer & RTD"
+  },
+  "Wine": {
+    hex: "#DB2777",
+    bg: "bg-pink-50 dark:bg-pink-950/40",
+    text: "text-pink-700 dark:text-pink-300",
+    border: "border-pink-200 dark:border-pink-800",
+    dot: "bg-pink-600",
+    label: "Wine"
+  },
+  "Drinks & Mixers": {
+    hex: "#6366F1",
+    bg: "bg-indigo-50 dark:bg-indigo-950/40",
+    text: "text-indigo-700 dark:text-indigo-300",
+    border: "border-indigo-200 dark:border-indigo-800",
+    dot: "bg-indigo-500",
+    label: "Drinks & Mixers"
+  },
+  "Snacks & Grocery": {
+    hex: "#84CC16",
+    bg: "bg-lime-50 dark:bg-lime-950/40",
+    text: "text-lime-800 dark:text-lime-300",
+    border: "border-lime-200 dark:border-lime-800",
+    dot: "bg-lime-600",
+    label: "Snacks & Grocery"
+  },
+  "Tobacco": {
+    hex: "#64748B",
+    bg: "bg-slate-100 dark:bg-slate-900/60",
+    text: "text-slate-700 dark:text-slate-300",
+    border: "border-slate-300 dark:border-slate-700",
+    dot: "bg-slate-500",
+    label: "Tobacco"
+  },
+  "Lottery": {
+    hex: "#9CA3AF",
+    bg: "bg-gray-100 dark:bg-gray-800",
+    text: "text-gray-600 dark:text-gray-400",
+    border: "border-gray-200 dark:border-gray-700",
+    dot: "bg-gray-400",
+    label: "Lottery"
+  },
+
+  // Sub-categories
   "Vodka": {
     hex: "#3B82F6",
     bg: "bg-blue-50 dark:bg-blue-950/40",
@@ -17,6 +76,14 @@ export const CATEGORY_COLORS: Record<string, { hex: string; bg: string; text: st
     border: "border-orange-200 dark:border-orange-800",
     dot: "bg-orange-500",
     label: "Tequila / Mezcal"
+  },
+  "Whiskey": {
+    hex: "#92400E",
+    bg: "bg-amber-50 dark:bg-amber-950/40",
+    text: "text-amber-900 dark:text-amber-300",
+    border: "border-amber-300 dark:border-amber-800",
+    dot: "bg-[#92400E]",
+    label: "Whiskey"
   },
   "Whiskey/Bourbon/Scotch": {
     hex: "#92400E",
@@ -50,21 +117,37 @@ export const CATEGORY_COLORS: Record<string, { hex: string; bg: string; text: st
     dot: "bg-emerald-600",
     label: "Gin"
   },
+  "Liqueur": {
+    hex: "#9333EA",
+    bg: "bg-purple-50 dark:bg-purple-950/40",
+    text: "text-purple-700 dark:text-purple-300",
+    border: "border-purple-200 dark:border-purple-800",
+    dot: "bg-purple-600",
+    label: "Liqueur"
+  },
   "Liqueur/Cordials": {
     hex: "#9333EA",
     bg: "bg-purple-50 dark:bg-purple-950/40",
     text: "text-purple-700 dark:text-purple-300",
     border: "border-purple-200 dark:border-purple-800",
     dot: "bg-purple-600",
-    label: "Liqueur / Cordials"
+    label: "Liqueur"
   },
-  "Wine": {
-    hex: "#DB2777",
-    bg: "bg-pink-50 dark:bg-pink-950/40",
-    text: "text-pink-700 dark:text-pink-300",
-    border: "border-pink-200 dark:border-pink-800",
-    dot: "bg-pink-600",
-    label: "Wine"
+  "Other Spirits – review": {
+    hex: "#A855F7",
+    bg: "bg-purple-50 dark:bg-purple-950/40",
+    text: "text-purple-700 dark:text-purple-300",
+    border: "border-purple-200 dark:border-purple-800",
+    dot: "bg-purple-500",
+    label: "Other Spirits – review"
+  },
+  "Beer": {
+    hex: "#EAB308",
+    bg: "bg-yellow-50 dark:bg-yellow-950/40",
+    text: "text-yellow-800 dark:text-yellow-300",
+    border: "border-yellow-300 dark:border-yellow-800",
+    dot: "bg-yellow-500",
+    label: "Beer"
   },
   "Beer/Malt": {
     hex: "#EAB308",
@@ -82,13 +165,37 @@ export const CATEGORY_COLORS: Record<string, { hex: string; bg: string; text: st
     dot: "bg-cyan-500",
     label: "RTD / Seltzer"
   },
-  "Tobacco": {
+  "Cigarettes": {
     hex: "#64748B",
     bg: "bg-slate-100 dark:bg-slate-900/60",
     text: "text-slate-700 dark:text-slate-300",
     border: "border-slate-300 dark:border-slate-700",
     dot: "bg-slate-500",
-    label: "Tobacco"
+    label: "Cigarettes"
+  },
+  "Cigars/Cigarillos": {
+    hex: "#78716C",
+    bg: "bg-stone-100 dark:bg-stone-900/60",
+    text: "text-stone-700 dark:text-stone-300",
+    border: "border-stone-300 dark:border-stone-700",
+    dot: "bg-stone-500",
+    label: "Cigars / Cigarillos"
+  },
+  "Vapes": {
+    hex: "#0EA5E9",
+    bg: "bg-sky-50 dark:bg-sky-950/40",
+    text: "text-sky-700 dark:text-sky-300",
+    border: "border-sky-200 dark:border-sky-800",
+    dot: "bg-sky-500",
+    label: "Vapes"
+  },
+  "Accessories": {
+    hex: "#6B7280",
+    bg: "bg-gray-100 dark:bg-gray-800",
+    text: "text-gray-700 dark:text-gray-300",
+    border: "border-gray-300 dark:border-gray-700",
+    dot: "bg-gray-500",
+    label: "Accessories"
   },
   "Grocery/Other": {
     hex: "#84CC16",
@@ -97,14 +204,6 @@ export const CATEGORY_COLORS: Record<string, { hex: string; bg: string; text: st
     border: "border-lime-200 dark:border-lime-800",
     dot: "bg-lime-600",
     label: "Grocery / Other"
-  },
-  "Lottery": {
-    hex: "#9CA3AF",
-    bg: "bg-gray-100 dark:bg-gray-800",
-    text: "text-gray-600 dark:text-gray-400",
-    border: "border-gray-200 dark:border-gray-700",
-    dot: "bg-gray-400",
-    label: "Lottery"
   }
 };
 

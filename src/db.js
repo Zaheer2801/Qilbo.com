@@ -244,11 +244,29 @@ export async function inventory(db, { category, subCategory, distributor, brand,
   const from60 = addDays(todayLocal(), -60);
   const conds = ["p.active=1"];
   const binds = [];
-  if (category) { binds.push(category); conds.push(`p.category = ?${binds.length + 1}`); }
+  if (category) {
+    const idx1 = binds.length + 2;
+    binds.push(category);
+    const idx2 = binds.length + 2;
+    binds.push(category);
+    conds.push(`(p.category = ?${idx1} OR p.sub_category = ?${idx2})`);
+  }
   else { conds.push("COALESCE(p.category,'') <> 'Lottery'"); }
-  if (subCategory) { binds.push(subCategory); conds.push(`p.sub_category = ?${binds.length + 1}`); }
-  if (distributor) { binds.push(distributor); conds.push(`p.distributor = ?${binds.length + 1}`); }
-  if (brand) { binds.push(brand); conds.push(`p.brand = ?${binds.length + 1}`); }
+  if (subCategory) {
+    const idx = binds.length + 2;
+    binds.push(subCategory);
+    conds.push(`p.sub_category = ?${idx}`);
+  }
+  if (distributor) {
+    const idx = binds.length + 2;
+    binds.push(distributor);
+    conds.push(`p.distributor = ?${idx}`);
+  }
+  if (brand) {
+    const idx = binds.length + 2;
+    binds.push(brand);
+    conds.push(`p.brand = ?${idx}`);
+  }
   if (isTopShelf) { conds.push("p.is_top_shelf = 1"); }
 
   const rows = await stockMany(db, conds.join(' AND '), binds);
@@ -404,7 +422,7 @@ export async function salesSummary(db, start, end) {
   // Top shelf metrics (premium liquor only; no lottery)
   const topShelf = await db.prepare(`SELECT COALESCE(SUM(s.amount),0) amount, COALESCE(SUM(s.qty),0) qty
       FROM sales s JOIN products p ON p.id=s.product_id
-      WHERE s.sale_date BETWEEN ? AND ? AND p.is_top_shelf = 1 AND p.category IN ('Tequila/Mezcal', 'Cognac/Brandy', 'Whiskey/Bourbon/Scotch', 'Vodka', 'Rum', 'Gin') AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
+      WHERE s.sale_date BETWEEN ? AND ? AND p.is_top_shelf = 1 AND (p.category = 'Spirits' OR p.category IN ('Tequila/Mezcal', 'Cognac/Brandy', 'Whiskey/Bourbon/Scotch', 'Vodka', 'Rum', 'Gin') OR p.sub_category IN ('Tequila/Mezcal', 'Cognac/Brandy', 'Whiskey', 'Vodka', 'Rum', 'Gin')) AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
   const storeSales = +(tot.amount + deptNonLotto).toFixed(2);
 
   const topBrands = (await db.prepare(`SELECT COALESCE(p.brand, 'Unknown') brand, COALESCE(p.category, 'Other') category, SUM(s.qty) qty, SUM(s.amount) amount FROM sales s
@@ -655,7 +673,7 @@ export async function addToDraftPO(db, { productId, cases = 1, distributor }) {
     po = await db.prepare("INSERT INTO purchase_orders(distributor, status) VALUES(?, 'draft') RETURNING *").bind(dist).first();
   }
 
-  const caseSize = p.case_size || (p.category === 'Beer/RTD' || p.category === 'Beer/Malt' ? 24 : 12);
+  const caseSize = p.case_size || (p.category === 'Beer/RTD' || p.category === 'Beer/Malt' || p.category === 'Beer & RTD' ? 24 : 12);
   const unitCost = p.cost != null ? p.cost : (p.price ? +(p.price * 0.75).toFixed(2) : 0);
   const caseCost = +(unitCost * caseSize).toFixed(2);
   const bottles = cases * caseSize;

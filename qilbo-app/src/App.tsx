@@ -40,19 +40,23 @@ const TABS = [
 ];
 
 const SIDEBAR_CATEGORIES = [
-  { name: "Vodka", count: 137 },
-  { name: "Tequila/Mezcal", count: 91 },
-  { name: "Whiskey/Bourbon/Scotch", count: 100 },
-  { name: "Cognac/Brandy", count: 55 },
-  { name: "Rum", count: 31 },
-  { name: "Gin", count: 21 },
-  { name: "Liqueur/Cordials", count: 310 },
-  { name: "Wine", count: 63 },
-  { name: "Beer/Malt", count: 161 },
-  { name: "RTD/Seltzer", count: 91 },
-  { name: "Tobacco", count: 126 },
-  { name: "Grocery/Other", count: 309 },
+  { name: "Spirits", count: 782 },
+  { name: "Beer & RTD", count: 243 },
+  { name: "Drinks & Mixers", count: 238 },
+  { name: "Tobacco", count: 128 },
+  { name: "Wine", count: 58 },
+  { name: "Snacks & Grocery", count: 46 },
   { name: "Lottery", count: 45 },
+  { name: "Vodka", count: 131 },
+  { name: "Tequila/Mezcal", count: 92 },
+  { name: "Whiskey", count: 96 },
+  { name: "Beer", count: 153 },
+  { name: "RTD/Seltzer", count: 90 },
+  { name: "Cognac/Brandy", count: 55 },
+  { name: "Liqueur", count: 27 },
+  { name: "Rum", count: 29 },
+  { name: "Gin", count: 22 },
+  { name: "Other Spirits – review", count: 330 },
 ];
 
 const SIDEBAR_DISTRIBUTORS = [
@@ -61,7 +65,6 @@ const SIDEBAR_DISTRIBUTORS = [
   { name: "Gold Coast", count: 44 },
   { name: "Florida Distributors", count: 0 },
   { name: "Wayne Densch", count: 15 },
-  { name: "Unknown", count: 1300 },
 ];
 
 export default function App() {
