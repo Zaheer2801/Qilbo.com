@@ -75,6 +75,7 @@ def main():
       cost           REAL,
       price          REAL,
       price_source   TEXT DEFAULT 'estimated',
+      price_warning  TEXT,
       reorder_point  INTEGER,
       image_key      TEXT,
       active         INTEGER DEFAULT 1,
@@ -354,33 +355,44 @@ def main():
     date_60d = cur.fetchone()[0]
 
     cur.execute("""
-        WITH single_sales AS (
-            SELECT product_id, amount,
-                   COUNT(DISTINCT sale_date) as day_cnt,
-                   MAX(sale_date) as latest_date
-            FROM sales
-            WHERE (qty = 1.0 OR qty = 1) AND amount > 0 AND product_id IS NOT NULL AND sale_date >= ?
-            GROUP BY product_id, amount
-        ),
-        ranked AS (
-            SELECT product_id, amount, day_cnt, latest_date,
-                   ROW_NUMBER() OVER (PARTITION BY product_id ORDER BY latest_date DESC, day_cnt DESC) as rn
-            FROM single_sales
-        )
-        SELECT product_id, amount, day_cnt FROM ranked WHERE rn = 1
+        SELECT product_id, ROUND(amount / qty, 2) as amt,
+               COUNT(DISTINCT sale_date) as day_cnt,
+               MAX(sale_date) as latest_date
+        FROM sales
+        WHERE (qty = 1.0 OR qty = 1) AND amount > 0 AND product_id IS NOT NULL AND sale_date >= ?
+        GROUP BY product_id, ROUND(amount / qty, 2)
+        ORDER BY product_id, latest_date DESC
     """, (date_60d,))
-    modes = cur.fetchall()
+    single_rows = cur.fetchall()
 
-    for pid, amt, day_cnt in modes:
-        clean_pre_tax = round(amt / 1.07, 2)
-        source = 'register' if day_cnt >= 2 else 'estimated'
+    from collections import defaultdict
+    by_product = defaultdict(list)
+    for pid, amt, day_cnt, latest_date in single_rows:
+        by_product[pid].append({'amt': amt, 'day_cnt': day_cnt, 'latest_date': latest_date})
+
+    for pid, p_list in by_product.items():
+        multi_days = [p for p in p_list if p['day_cnt'] >= 2]
+        if multi_days:
+            multi_days.sort(key=lambda x: (x['latest_date'], x['day_cnt']), reverse=True)
+            chosen = multi_days[0]
+            clean_pre_tax = round(chosen['amt'] / 1.07, 2)
+            source = 'register'
+            newer_single = [p for p in p_list if p['latest_date'] > chosen['latest_date'] and p['day_cnt'] == 1]
+            warning = 'price changed?' if newer_single else None
+        else:
+            p_list.sort(key=lambda x: x['latest_date'], reverse=True)
+            chosen = p_list[0]
+            clean_pre_tax = round(chosen['amt'] / 1.07, 2)
+            source = 'estimated'
+            warning = None
 
         cur.execute("""
             UPDATE products
             SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
-                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE ? END
+                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE ? END,
+                price_warning = CASE WHEN price_source = 'manual' THEN NULL ELSE ? END
             WHERE id = ?
-        """, (clean_pre_tax, source, pid))
+        """, (clean_pre_tax, source, warning, pid))
 
     # Multi-unit sales for products without single-unit sales in last 60 days
     cur.execute("""

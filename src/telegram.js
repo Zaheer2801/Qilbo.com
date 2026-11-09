@@ -118,7 +118,7 @@ async function onCommand(env, chatId, text) {
     const out = [];
     for (const p of rows) {
       const s = await stockFor(db, p.id);
-      const pr = p.price != null ? ` [${p.price_source === 'estimated' ? '~' : ''}$${Number(p.price).toFixed(2)}]` : '';
+      const pr = p.price != null ? ` [${p.price_source === 'estimated' ? '~' : ''}$${Number(p.price).toFixed(2)}${p.price_warning ? ' (price changed?)' : ''}]` : '';
       out.push(`• <b>${esc(pname(p))}</b>${pr}: <b>${s.on_hand ?? 'not counted'}</b> <i>(${esc(s.basis)})</i>`);
     }
     return send(env, chatId, out.join('\n'));
@@ -165,8 +165,8 @@ async function onCommand(env, chatId, text) {
     }
     const p = rows[0];
     const oldPrice = p.price;
-    await db.prepare("UPDATE products SET price=?, price_source='manual' WHERE id=?").bind(newPrice, p.id).run();
-    await setSetting(db, 'last_change', JSON.stringify({ type: 'price', product_id: p.id, old: oldPrice, old_source: p.price_source }));
+    await db.prepare("UPDATE products SET price=?, price_source='manual', price_warning=NULL WHERE id=?").bind(newPrice, p.id).run();
+    await setSetting(db, 'last_change', JSON.stringify({ type: 'price', product_id: p.id, old: oldPrice, old_source: p.price_source, old_warning: p.price_warning }));
     return send(env, chatId, `🏷️ ${esc(pname(p))}: ${oldPrice != null ? '$' + Number(oldPrice).toFixed(2) : 'none'} → <b>$${newPrice.toFixed(2)}</b> (manual)\n(/undo to reverse)`);
   }
 
@@ -240,7 +240,7 @@ export async function undo(env) {
   } else if (c.type === 'adjust') {
     await db.prepare('DELETE FROM adjustments WHERE id=(SELECT id FROM adjustments WHERE product_id=? ORDER BY created_at DESC, id DESC LIMIT 1)').bind(c.product_id).run();
   } else if (c.type === 'price') {
-    await db.prepare('UPDATE products SET price=?, price_source=? WHERE id=?').bind(c.old, c.old_source || 'estimated', c.product_id).run();
+    await db.prepare('UPDATE products SET price=?, price_source=?, price_warning=? WHERE id=?').bind(c.old, c.old_source || 'estimated', c.old_warning || null, c.product_id).run();
   }
   await db.prepare("DELETE FROM settings WHERE key='last_change'").run();
   const p = await db.prepare('SELECT name, clean_name, size FROM products WHERE id=?').bind(c.product_id).first();
@@ -316,7 +316,7 @@ export function invoicePreview(st) {
     `<b>${esc(st.distributor)} #${esc(st.invoice_no)}</b> – ${esc(st.invoice_date || 'no date')}`,
     `Invoice total: ${money(st.total)} | lines add up to ${money(sum)}${st.total && Math.abs(sum - st.total) > 1 ? ' ⚠️ check' : ''}`,
     '',
-    ...st.lines.map(l => `• ${esc(l.description)} – <b>${l.bottles}</b> units @ ${money(l.unit_cost)}${l.matched ? '' : ' 🆕'}`),
+    ...st.lines.map(l => `• ${esc(l.description)} – <b>${l.bottles}</b> units @ ${money(l.unit_cost)}${l.matched ? '' : ' 🆕'}${l.warning ? ' ' + esc(l.warning) : ''}`),
     '',
     newOnes ? `🆕 = ${newOnes} new product(s) will be created.` : 'All items matched to existing products.',
     'Save these bottles into inventory?'

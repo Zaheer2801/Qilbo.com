@@ -229,39 +229,57 @@ export async function ingestSalesCsv(db, csvText, saleDate, fileName) {
   if (productIds.length) {
     const from60 = addDays(saleDate, -60);
     const singleSales = (await db.prepare(`
-      SELECT product_id, amount, COUNT(DISTINCT sale_date) as day_cnt, MAX(sale_date) as latest_date
+      SELECT product_id, ROUND(amount / qty, 2) as amt, COUNT(DISTINCT sale_date) as day_cnt, MAX(sale_date) as latest_date
       FROM sales
       WHERE product_id IN (${productIds.map((_, i) => '?' + (i + 2)).join(',')})
         AND (qty = 1.0 OR qty = 1) AND amount > 0 AND sale_date >= ?1
-      GROUP BY product_id, amount
-      ORDER BY latest_date DESC, day_cnt DESC
+      GROUP BY product_id, ROUND(amount / qty, 2)
+      ORDER BY product_id, latest_date DESC
     `).bind(from60, ...productIds).all()).results;
 
-    const bestSingle = new Map();
+    const byProduct = new Map();
     for (const r of singleSales) {
-      if (!bestSingle.has(r.product_id)) {
-        bestSingle.set(r.product_id, r);
-      }
+      if (!byProduct.has(r.product_id)) byProduct.set(r.product_id, []);
+      byProduct.get(r.product_id).push(r);
     }
 
     const priceUpdates = [];
     for (const pid of productIds) {
-      const match = bestSingle.get(pid);
-      if (match) {
-        const cleanPrice = +(match.amount / (1 + TAX)).toFixed(2);
-        const source = match.day_cnt >= 2 ? 'register' : 'estimated';
-        priceUpdates.push(db.prepare(`
-          UPDATE products
-          SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
-              price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE ? END
-          WHERE id = ?
-        `).bind(cleanPrice, source, pid));
+      const pList = byProduct.get(pid);
+      if (pList && pList.length) {
+        const multiDays = pList.filter(p => p.day_cnt >= 2);
+        if (multiDays.length) {
+          multiDays.sort((a, b) => b.latest_date.localeCompare(a.latest_date) || b.day_cnt - a.day_cnt);
+          const chosen = multiDays[0];
+          const cleanPrice = +(chosen.amt / (1 + TAX)).toFixed(2);
+          const newerSingle = pList.some(p => p.latest_date > chosen.latest_date && p.day_cnt === 1);
+          const warning = newerSingle ? 'price changed?' : null;
+          priceUpdates.push(db.prepare(`
+            UPDATE products
+            SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
+                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'register' END,
+                price_warning = CASE WHEN price_source = 'manual' THEN NULL ELSE ? END
+            WHERE id = ?
+          `).bind(cleanPrice, warning, pid));
+        } else {
+          pList.sort((a, b) => b.latest_date.localeCompare(a.latest_date));
+          const chosen = pList[0];
+          const cleanPrice = +(chosen.amt / (1 + TAX)).toFixed(2);
+          priceUpdates.push(db.prepare(`
+            UPDATE products
+            SET price = CASE WHEN price_source = 'manual' THEN price ELSE ? END,
+                price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'estimated' END,
+                price_warning = NULL
+            WHERE id = ?
+          `).bind(cleanPrice, pid));
+        }
       } else {
         priceUpdates.push(db.prepare(`
           UPDATE products
           SET price = CASE WHEN price_source = 'manual' THEN price
                            ELSE (SELECT ROUND(SUM(amount) / SUM(qty) / 1.07, 2) FROM sales WHERE product_id=? AND sale_date>=?) END,
-              price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'estimated' END
+              price_source = CASE WHEN price_source = 'manual' THEN 'manual' ELSE 'estimated' END,
+              price_warning = NULL
           WHERE id = ? AND (SELECT COUNT(*) FROM sales WHERE product_id=? AND sale_date>=?) > 0
         `).bind(pid, from60, pid, pid, from60));
       }
@@ -329,6 +347,35 @@ export function fuzzyMatch(products, text) {
   return bestScore >= 0.5 && bestScore - second >= 0.1 ? best : null;
 }
 
+export function parseBeerPackUnits(desc) {
+  const s = (desc || '').toUpperCase();
+
+  // "A/B/C" pattern, e.g. 3/8/16, 6/4/16, 2/12/12, 2/12/1, 2/6/500
+  // units per case = A (number of retail packs)
+  const abc = s.match(/\b(\d+)\/(\d+)\/(\d+[A-Z]*|\d+)\b/);
+  if (abc) {
+    const packs = parseInt(abc[1], 10);
+    if (packs > 0) return packs;
+  }
+
+  // Suitcases: "18/12", "24/12" (or contains SUITCASE) -> 1 retail pack per case
+  if (/\b(18\/12|24\/12)\b/.test(s) || s.includes('SUITCASE')) {
+    return 1;
+  }
+
+  // "15/25" singles -> 15 singles
+  if (/\b15\/25\b/.test(s)) {
+    return 15;
+  }
+
+  // "12/22" or "12/24" singles -> 12 singles
+  if (/\b12\/(22|24|25)\b/.test(s)) {
+    return 12;
+  }
+
+  return null;
+}
+
 export function matchLine(m, l, distributor) {
   const u = normUpc(l.upc);
   if (u) {
@@ -360,29 +407,63 @@ export async function stageInvoice(db, inv, meta = {}) {
     VALUES(?,?,?,?, 'pending', ?,?,?) RETURNING id
   `).bind(dist, no, inv.invoice_date || null, inv.total ?? null, meta.file_key || null, meta.source || null, JSON.stringify(inv)).first();
 
+  // Known units per case from earlier posted invoices
+  const earlierRows = (await db.prepare(`
+    SELECT l.product_id, l.cases, l.bottles
+    FROM invoice_lines l
+    JOIN invoices i ON i.id = l.invoice_id
+    WHERE i.status = 'posted' AND l.cases > 0 AND l.bottles > 0 AND l.product_id IS NOT NULL
+    ORDER BY i.invoice_date DESC, i.id DESC
+  `).all()).results;
+
+  const earlierMap = new Map();
+  for (const row of earlierRows) {
+    if (!earlierMap.has(row.product_id)) {
+      earlierMap.set(row.product_id, Math.round(row.bottles / row.cases));
+    }
+  }
+
   const m = await loadMatchers(db, dist);
   const stmts = [], summary = [];
 
   for (const l of inv.lines || []) {
-    const per = Number(l.units_per_case) || null;
-    let bottles = Number(l.bottles) || 0;
-    if (!bottles && l.cases && per) bottles = Number(l.cases) * per;
-    const unitCost = l.unit_cost ?? (l.line_total && bottles ? +(l.line_total / bottles).toFixed(4) : null);
     const mm = matchLine(m, l, dist);
+    const earlierUnits = mm.id ? earlierMap.get(mm.id) : null;
+    const parsedUnits = parseBeerPackUnits(l.description);
+    const modelUnits = Number(l.units_per_case) || null;
+    const catalogUnits = mm.id ? m.byId.get(mm.id)?.units_per_case : null;
+
+    const newProposedUnits = parsedUnits || modelUnits || catalogUnits || 1;
+    let unitsPerCase = newProposedUnits;
+    let warning = null;
+
+    if (earlierUnits != null) {
+      unitsPerCase = earlierUnits;
+      if (newProposedUnits !== earlierUnits) {
+        warning = '⚠ units differ from last invoice';
+      }
+    }
+
+    const cases = Number(l.cases) || 1;
+    const bottles = Math.round(cases * unitsPerCase);
+    const unitCost = l.line_total && bottles ? +(l.line_total / bottles).toFixed(4) : (l.unit_cost ?? null);
 
     stmts.push(db.prepare(`
       INSERT INTO invoice_lines(invoice_id, product_id, description, item_code, upc, cases, bottles, unit_cost, line_total)
       VALUES(?,?,?,?,?,?,?,?,?)
     `).bind(r.id, mm.id, l.description || null, l.item_code ? String(l.item_code) : null,
-      normUpc(l.upc) || null, l.cases ?? null, bottles, unitCost, l.line_total ?? null));
+      normUpc(l.upc) || null, cases, bottles, unitCost, l.line_total ?? null));
 
     summary.push({
       description: l.description,
+      cases,
+      units_per_case: unitsPerCase,
       bottles,
       unit_cost: unitCost,
       line_total: l.line_total ?? null,
       matched: mm.id ? (m.byId.get(mm.id)?.clean_name || m.byId.get(mm.id)?.name || '(existing product)') : null,
-      how: mm.how
+      how: mm.how,
+      warning
     });
   }
 

@@ -16,6 +16,7 @@ CREATE TABLE IF NOT EXISTS products (
   cost           REAL,
   price          REAL,
   price_source   TEXT DEFAULT 'estimated',
+  price_warning  TEXT,
   reorder_point  INTEGER,
   image_key      TEXT,
   active         INTEGER DEFAULT 1,

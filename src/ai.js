@@ -27,7 +27,8 @@ export function resetAiStats() {
 }
 
 async function gemini(env, body) {
-  const model = env.GEMINI_MODEL || 'gemini-flash-lite-latest';
+  const model = env.GEMINI_MODEL;
+  if (!model) throw new Error('GEMINI_MODEL is not configured in environment.');
   const res = await fetch(`${env.GEMINI_BASE || BASE}${model}:generateContent`, {
     method: 'POST',
     headers: { 'content-type': 'application/json', 'x-goog-api-key': env.GEMINI_API_KEY },
@@ -82,8 +83,9 @@ async function runTool(env, name, a) {
           distributor: p.distributor,
           cost: p.cost,
           price: p.price,
-          display_price: p.price != null ? `${p.price_source === 'estimated' ? '~' : ''}$${Number(p.price).toFixed(2)}` : null,
+          display_price: p.price != null ? `${p.price_source === 'estimated' ? '~' : ''}$${Number(p.price).toFixed(2)}${p.price_warning ? ' (price changed?)' : ''}` : null,
           price_source: p.price_source,
+          price_warning: p.price_warning || null,
           on_hand: sm.get(p.id)?.on_hand ?? null,
           basis: sm.get(p.id)?.basis
         }))
@@ -104,9 +106,9 @@ async function runTool(env, name, a) {
       return { saved: true, on_hand: after.on_hand };
     }
     case 'set_price': {
-      const p = await db.prepare('SELECT price, price_source FROM products WHERE id=?').bind(a.product_id).first();
-      await db.prepare("UPDATE products SET price=?, price_source='manual' WHERE id=?").bind(a.price, a.product_id).run();
-      await remember(db, { type: 'price', product_id: a.product_id, old: p?.price ?? null, old_source: p?.price_source });
+      const p = await db.prepare('SELECT price, price_source, price_warning FROM products WHERE id=?').bind(a.product_id).first();
+      await db.prepare("UPDATE products SET price=?, price_source='manual', price_warning=NULL WHERE id=?").bind(a.price, a.product_id).run();
+      await remember(db, { type: 'price', product_id: a.product_id, old: p?.price ?? null, old_source: p?.price_source, old_warning: p?.price_warning });
       return { saved: true, old_price: p?.price ?? null, new_price: a.price };
     }
     case 'sales_report': {
@@ -163,7 +165,7 @@ Rules:
 - When asked about sales for a date or "sales yesterday", call sales_report and report the store sales total (which excludes lottery).
 - Only change data (count, adjust, price) when the owner clearly asked. After any change say exactly what changed and that he can type /undo.
 - Never place orders or contact distributors. Suggest quantities in cases.
-- Answer short and clear for a phone screen: a few lines or a small list, $ with 2 decimals. Show estimated prices with a '~'. No markdown tables; use simple lines.`;
+- Answer short and clear for a phone screen: a few lines or a small list, $ with 2 decimals. Show estimated prices with a '~'. If a product has a price warning ('price changed?'), mention it so the owner can confirm with /price. No markdown tables; use simple lines.`;
 
 export async function askAssistant(env, userText, history = [], todayOverride = null) {
   const today = todayOverride || env.TODAY_OVERRIDE || todayLocal();

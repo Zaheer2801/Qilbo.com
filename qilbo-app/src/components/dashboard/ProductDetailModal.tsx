@@ -193,6 +193,11 @@ export default function ProductDetailModal({ productId, onClose, onStockUpdated 
                     <div className="text-[10px] text-stone-400">
                       Source: {detail.product.price_source}
                     </div>
+                    {detail.product.price_warning && (
+                      <span className="inline-block mt-1 px-1.5 py-0.5 bg-amber-500/20 text-amber-300 border border-amber-500/40 rounded text-[10px] font-semibold">
+                        ⚠ {detail.product.price_warning}
+                      </span>
+                    )}
                   </div>
                 </div>
 

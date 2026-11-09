@@ -208,12 +208,13 @@ export async function ledger(db, productId) {
   const v = await velocity(db, productId);
 
   // Price formatting: show "~" if estimated
-  const displayPrice = p.price != null ? `${p.price_source === 'estimated' ? '~' : ''}$${Number(p.price).toFixed(2)}` : '–';
+  const displayPrice = p.price != null ? `${p.price_source === 'estimated' ? '~' : ''}$${Number(p.price).toFixed(2)}${p.price_warning ? ' (price changed?)' : ''}` : '–';
 
   return {
     product: {
       ...p,
       display_price: displayPrice,
+      price_warning: p.price_warning || null,
     },
     upcs,
     stock: st,
@@ -285,7 +286,7 @@ export async function inventory(db, { category, subCategory, distributor, status
 
     const avgPrice = s30.q ? s30.a / s30.q / (1 + TAX) : (r.price || null);
     const margin = avgPrice && r.cost ? (avgPrice - r.cost) / avgPrice : null;
-    const displayPrice = r.price != null ? `${r.price_source === 'estimated' ? '~' : ''}$${Number(r.price).toFixed(2)}` : null;
+    const displayPrice = r.price != null ? `${r.price_source === 'estimated' ? '~' : ''}$${Number(r.price).toFixed(2)}${r.price_warning ? ' (price changed?)' : ''}` : null;
 
     out.push({
       id: r.id,
@@ -302,6 +303,7 @@ export async function inventory(db, { category, subCategory, distributor, status
       cost: r.cost,
       price: r.price,
       price_source: r.price_source || 'estimated',
+      price_warning: r.price_warning || null,
       display_price: displayPrice,
       do_not_reorder: r.do_not_reorder || 0,
       on_hand: r.on_hand,

@@ -483,17 +483,18 @@ async function handleApi(req, env, url, ctx) {
     const pid = Number(body.product_id);
     const price = body.price != null ? Number(body.price) : null;
     const cost = body.cost != null ? Number(body.cost) : null;
-    const old = await db.prepare('SELECT price, price_source FROM products WHERE id=?').bind(pid).first();
+    const old = await db.prepare('SELECT price, price_source, price_warning FROM products WHERE id=?').bind(pid).first();
 
     await db.prepare(`
       UPDATE products
       SET price = COALESCE(?, price),
           cost = COALESCE(?, cost),
-          price_source = CASE WHEN ? IS NOT NULL THEN 'manual' ELSE price_source END
+          price_source = CASE WHEN ? IS NOT NULL THEN 'manual' ELSE price_source END,
+          price_warning = CASE WHEN ? IS NOT NULL THEN NULL ELSE price_warning END
       WHERE id = ?
-    `).bind(price, cost, price, pid).run();
+    `).bind(price, cost, price, price, pid).run();
 
-    await setSetting(db, 'last_change', JSON.stringify({ type: 'price', product_id: pid, old: old?.price, old_source: old?.price_source }));
+    await setSetting(db, 'last_change', JSON.stringify({ type: 'price', product_id: pid, old: old?.price, old_source: old?.price_source, old_warning: old?.price_warning }));
     return json({ ok: true });
   }
 

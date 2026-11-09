@@ -217,6 +217,7 @@ export interface ApiInventoryItem {
   cost: number | null;
   price: number | null;
   price_source: PriceSource;
+  price_warning?: string | null;
   display_price: string | null;
   on_hand: number | null;
   basis: string;
@@ -335,6 +336,7 @@ export interface ApiLedgerDetail {
     cost: number | null;
     price: number | null;
     price_source: PriceSource;
+    price_warning?: string | null;
     display_price: string | null;
     reorder_point: number | null;
     is_top_shelf: number;
