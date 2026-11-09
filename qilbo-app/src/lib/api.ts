@@ -6,6 +6,7 @@ import type {
   ApiInvoice,
   ApiInvoiceLine,
   ApiDistributorOrder,
+  ApiPurchaseOrder,
 } from "../types";
 
 export class ApiError extends Error {
@@ -17,33 +18,40 @@ export class ApiError extends Error {
 }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
+  console.log('[API REQ]', path);
   const headers = new Headers(options.headers || {});
   if (!headers.has("Content-Type") && !(options.body instanceof FormData)) {
     headers.set("Content-Type", "application/json");
   }
 
-  const res = await fetch(path, {
-    ...options,
-    headers,
-    credentials: "include", // Include HttpOnly signed cookie `dl`
-  });
+  try {
+    const res = await fetch(path, {
+      ...options,
+      headers,
+      credentials: "include", // Include HttpOnly signed cookie `dl`
+    });
+    console.log('[API RES STATUS]', path, res.status);
 
-  if (res.status === 401) {
-    throw new ApiError("Login required", 401);
-  }
-
-  if (!res.ok) {
-    let errorMsg = `Request failed (${res.status})`;
-    try {
-      const errJson = await res.json();
-      if (errJson.error) errorMsg = errJson.error;
-    } catch {
-      // Use fallback
+    if (res.status === 401) {
+      throw new ApiError("Login required", 401);
     }
-    throw new ApiError(errorMsg, res.status);
-  }
 
-  return res.json() as Promise<T>;
+    if (!res.ok) {
+      let errorMsg = `Request failed (${res.status})`;
+      try {
+        const errJson = await res.json();
+        if (errJson.error) errorMsg = errJson.error;
+      } catch {
+        // Use fallback
+      }
+      throw new ApiError(errorMsg, res.status);
+    }
+
+    return res.json() as Promise<T>;
+  } catch (e) {
+    console.log('[API FETCH THREW]', path, e);
+    throw e;
+  }
 }
 
 export const api = {
@@ -75,17 +83,25 @@ export const api = {
     category?: string;
     sub_category?: string;
     distributor?: string;
+    brand?: string;
     status?: string;
     top_shelf?: boolean;
     all?: boolean;
+    start?: string;
+    end?: string;
+    days?: number;
   } = {}): Promise<ApiInventoryItem[]> => {
     const q = new URLSearchParams();
     if (params.category) q.set("category", params.category);
     if (params.sub_category) q.set("sub_category", params.sub_category);
     if (params.distributor) q.set("distributor", params.distributor);
+    if (params.brand) q.set("brand", params.brand);
     if (params.status) q.set("status", params.status);
     if (params.top_shelf) q.set("top_shelf", "1");
     if (params.all) q.set("all", "1");
+    if (params.start) q.set("start", params.start);
+    if (params.end) q.set("end", params.end);
+    if (params.days) q.set("days", String(params.days));
     return request<ApiInventoryItem[]>(`/api/inventory?${q.toString()}`);
   },
 
@@ -136,6 +152,13 @@ export const api = {
     });
   },
 
+  updateProduct: (data: { id: number; brand?: string; category?: string; distributor?: string; price?: number }) => {
+    return request<{ ok: boolean }>("/api/product/update", {
+      method: "POST",
+      body: JSON.stringify(data),
+    });
+  },
+
   undo: () => {
     return request<{ message: string }>("/api/undo", { method: "POST" });
   },
@@ -166,6 +189,57 @@ export const api = {
   // Orders
   getOrders: (): Promise<ApiDistributorOrder[]> => {
     return request<ApiDistributorOrder[]>("/api/orders");
+  },
+
+  // Purchase Orders (Draft & Ordered)
+  getDraftPOs: (): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>("/api/po/drafts");
+  },
+
+  getPOHistory: (limit = 50): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>(`/api/po/history?limit=${limit}`);
+  },
+
+  addToDraftPO: (productId: number, cases = 1, distributor?: string): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>("/api/po/item", {
+      method: "POST",
+      body: JSON.stringify({ product_id: productId, cases, distributor }),
+    });
+  },
+
+  updatePOLine: (lineId: number, cases: number): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>("/api/po/item/update", {
+      method: "POST",
+      body: JSON.stringify({ line_id: lineId, cases }),
+    });
+  },
+
+  removePOLine: (params: { lineId?: number; poId?: number; productId?: number }): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>("/api/po/item/delete", {
+      method: "POST",
+      body: JSON.stringify({ line_id: params.lineId, po_id: params.poId, product_id: params.productId }),
+    });
+  },
+
+  addAllReorderToPO: (distributor: string): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>("/api/po/add-reorder", {
+      method: "POST",
+      body: JSON.stringify({ distributor }),
+    });
+  },
+
+  clearPO: (distributor?: string, poId?: number): Promise<ApiPurchaseOrder[]> => {
+    return request<ApiPurchaseOrder[]>("/api/po/clear", {
+      method: "POST",
+      body: JSON.stringify({ distributor, po_id: poId }),
+    });
+  },
+
+  markPOOrdered: (poId?: number, distributor?: string): Promise<{ orderedPoId: number; drafts: ApiPurchaseOrder[] }> => {
+    return request<{ orderedPoId: number; drafts: ApiPurchaseOrder[] }>("/api/po/order", {
+      method: "POST",
+      body: JSON.stringify({ po_id: poId, distributor }),
+    });
   },
 
   // Upload File (Invoice PDF/image or Sales CSV)

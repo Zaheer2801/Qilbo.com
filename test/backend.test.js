@@ -87,9 +87,11 @@ async function runTests() {
   if (c2.category !== "Lottery") throw new Error("Lottery classification failed");
   console.log("  -> ✅ Classification rules verified.\n");
 
-  // Setup In-Memory D1 Database with merged data
+  // Setup In-Memory D1 Database with merged data + v2 categories/brands + schema
   const rawDb = new DatabaseSync(":memory:");
   rawDb.exec(fs.readFileSync("migrate/merged.sql", "utf-8"));
+  rawDb.exec(fs.readFileSync("migrate/v2_categories_brands.sql", "utf-8"));
+  rawDb.exec(fs.readFileSync("schema.sql", "utf-8"));
   const db = createD1Emulator(rawDb);
 
   // Test 2: Sales Ingestion & Lottery Exclusion

@@ -10,7 +10,15 @@ import {
   addDays,
   setSetting,
   distributorOrderSuggestions,
-  stockFor
+  stockFor,
+  getDraftPOs,
+  addToDraftPO,
+  updateDraftPOLine,
+  removeLineFromDraftPO,
+  addAllReorderToDraftPO,
+  clearDraftPO,
+  markPOAsOrdered,
+  getPOHistory
 } from './db.js';
 import {
   ingestSalesCsv,
@@ -370,9 +378,13 @@ async function handleApi(req, env, url, ctx) {
       category: q.get('category') || undefined,
       subCategory: q.get('sub_category') || undefined,
       distributor: q.get('distributor') || undefined,
+      brand: q.get('brand') || undefined,
       status: q.get('status') || undefined,
       isTopShelf: q.get('top_shelf') === '1' || q.get('top_shelf') === 'true',
-      onlyTracked: q.get('all') !== '1'
+      onlyTracked: q.get('all') !== '1',
+      start: q.get('start') || undefined,
+      end: q.get('end') || undefined,
+      days: q.get('days') ? Number(q.get('days')) : undefined
     });
     return json(items);
   }
@@ -448,6 +460,17 @@ async function handleApi(req, env, url, ctx) {
     return json(getAiStats());
   }
 
+  // GET /api/po/drafts
+  if (p === '/api/po/drafts') {
+    return json(await getDraftPOs(db));
+  }
+
+  // GET /api/po/history
+  if (p === '/api/po/history') {
+    const limit = Number(q.get('limit') || 50);
+    return json(await getPOHistory(db, limit));
+  }
+
   // POST Mutating Endpoints
   if (req.method !== 'POST') return json({ error: 'method not allowed' }, 405);
   const body = req.headers.get('content-type')?.includes('application/json') ? await req.json() : {};
@@ -507,9 +530,76 @@ async function handleApi(req, env, url, ctx) {
     return json({ ok: true, product_id: pid, do_not_reorder: flag });
   }
 
+  // POST /api/product/update
+  if (p === '/api/product/update') {
+    const pid = Number(body.product_id || body.id);
+    if (!pid) return json({ error: 'product_id required' }, 400);
+    const updates = [];
+    const binds = [];
+    if (body.brand !== undefined) { binds.push(body.brand); updates.push(`brand = ?${binds.length}`); }
+    if (body.category !== undefined) { binds.push(body.category); updates.push(`category = ?${binds.length}`); }
+    if (body.distributor !== undefined) { binds.push(body.distributor); updates.push(`distributor = ?${binds.length}`); }
+    if (body.price !== undefined) {
+      binds.push(Number(body.price)); updates.push(`price = ?${binds.length}`);
+      binds.push('manual'); updates.push(`price_source = ?${binds.length}`);
+      updates.push('price_warning = NULL');
+    }
+    if (updates.length > 0) {
+      binds.push(pid);
+      await db.prepare(`UPDATE products SET ${updates.join(', ')}, updated_at = CURRENT_TIMESTAMP WHERE id = ?${binds.length}`).bind(...binds).run();
+    }
+    return json({ ok: true, product_id: pid });
+  }
+
   // POST /api/undo
   if (p === '/api/undo') {
     return json({ message: await undo(env) });
+  }
+
+  // POST /api/po/item (add or update item in draft PO)
+  if (p === '/api/po/item') {
+    const productId = Number(body.product_id);
+    const cases = Number(body.cases || 1);
+    const distributor = body.distributor || undefined;
+    if (!productId) return json({ error: 'product_id required' }, 400);
+    return json(await addToDraftPO(db, { productId, cases, distributor }));
+  }
+
+  // POST /api/po/item/update
+  if (p === '/api/po/item/update') {
+    const lineId = Number(body.line_id);
+    const cases = Number(body.cases);
+    if (!lineId || isNaN(cases)) return json({ error: 'line_id and cases required' }, 400);
+    return json(await updateDraftPOLine(db, { lineId, cases }));
+  }
+
+  // POST /api/po/item/delete
+  if (p === '/api/po/item/delete') {
+    const lineId = body.line_id ? Number(body.line_id) : undefined;
+    const poId = body.po_id ? Number(body.po_id) : undefined;
+    const productId = body.product_id ? Number(body.product_id) : undefined;
+    return json(await removeLineFromDraftPO(db, { lineId, poId, productId }));
+  }
+
+  // POST /api/po/add-reorder
+  if (p === '/api/po/add-reorder') {
+    const distributor = body.distributor;
+    if (!distributor) return json({ error: 'distributor required' }, 400);
+    return json(await addAllReorderToDraftPO(db, { distributor }));
+  }
+
+  // POST /api/po/clear
+  if (p === '/api/po/clear') {
+    const distributor = body.distributor || undefined;
+    const poId = body.po_id ? Number(body.po_id) : undefined;
+    return json(await clearDraftPO(db, { distributor, poId }));
+  }
+
+  // POST /api/po/order (mark draft as ordered)
+  if (p === '/api/po/order') {
+    const distributor = body.distributor || undefined;
+    const poId = body.po_id ? Number(body.po_id) : undefined;
+    return json(await markPOAsOrdered(db, { distributor, poId }));
   }
 
   // POST /api/ask

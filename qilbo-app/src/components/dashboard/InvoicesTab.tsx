@@ -6,9 +6,11 @@ import {
   RefreshCw,
   AlertCircle,
   ChevronRight,
+  Receipt,
 } from "lucide-react";
 import type { ApiInvoice, ApiInvoiceLine } from "../../types";
 import { api } from "../../lib/api";
+import { getDistributorBadge } from "../../lib/colors";
 
 export default function InvoicesTab() {
   const [invoices, setInvoices] = useState<ApiInvoice[]>([]);
@@ -49,7 +51,7 @@ export default function InvoicesTab() {
     const file = e.target.files?.[0];
     if (!file) return;
     setUploading(true);
-    setUploadMsg("Reading document with Gemini AI & staging invoice... (30s)");
+    setUploadMsg("Reading invoice with Gemini AI & calculating units... (10s)");
     try {
       const res = await api.uploadFile(file);
       setUploadMsg(`Document uploaded successfully! Staged as ${res.distributor || "invoice"} #${res.invoice_no || ""}.`);
@@ -98,31 +100,38 @@ export default function InvoicesTab() {
 
   return (
     <div className="space-y-6">
-      {/* Top Header & Upload Area */}
-      <div className="bg-stone-900 border border-stone-800 p-5 rounded-xl space-y-4">
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-          <div>
-            <h2 className="text-base font-semibold text-white">Distributor Invoices & Document Staging</h2>
-            <p className="text-xs text-stone-400">
-              Upload invoices (PDF or photo) • Staged for review with Save/Discard approval
-            </p>
+      {/* Header & Upload Box */}
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 p-6 rounded-2xl shadow-sm space-y-4">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex items-center gap-3.5">
+            <div className="w-12 h-12 rounded-2xl bg-blue-50 dark:bg-blue-950/50 text-blue-600 flex items-center justify-center font-bold shadow-sm">
+              <Receipt className="w-6 h-6" />
+            </div>
+            <div>
+              <h2 className="text-xl font-extrabold text-slate-900 dark:text-white tracking-tight">
+                Distributor Invoices & Document Staging
+              </h2>
+              <p className="text-xs sm:text-sm text-slate-500 dark:text-slate-400 mt-0.5">
+                Upload invoices (PDF or photo) • Staged for review with Save / Discard approval
+              </p>
+            </div>
           </div>
           <button
             onClick={loadInvoices}
-            className="p-2 self-start sm:self-auto bg-stone-800 hover:bg-stone-700 border border-stone-700 rounded-lg text-stone-300 transition"
+            className="p-2.5 self-start sm:self-auto bg-slate-50 hover:bg-slate-100 dark:bg-slate-800 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-300 transition shadow-sm"
           >
-            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin" : ""}`} />
+            <RefreshCw className={`w-4 h-4 ${loading ? "animate-spin text-blue-600" : ""}`} />
           </button>
         </div>
 
         {/* Drag & Drop Upload Input */}
-        <label className="border-2 border-dashed border-stone-700 hover:border-amber-500 rounded-xl p-6 flex flex-col items-center justify-center cursor-pointer bg-stone-950/50 hover:bg-stone-800/30 transition group">
-          <UploadCloud className="w-8 h-8 text-stone-500 group-hover:text-amber-400 mb-2 transition" />
-          <div className="text-xs font-semibold text-stone-200">
-            {uploading ? "Extracting line items..." : "Click to upload distributor invoice PDF, photo, or sales CSV"}
+        <label className="border-2 border-dashed border-slate-200 dark:border-slate-700 hover:border-blue-500 rounded-2xl p-8 flex flex-col items-center justify-center cursor-pointer bg-slate-50/50 hover:bg-blue-50/30 transition group">
+          <UploadCloud className="w-10 h-10 text-slate-400 group-hover:text-blue-600 mb-2 transition" />
+          <div className="text-sm font-bold text-slate-800 dark:text-slate-200">
+            {uploading ? "Extracting line items with Gemini AI..." : "Click or drag to upload invoice PDF, photo, or sales CSV"}
           </div>
-          <div className="text-[11px] text-stone-400 mt-0.5">
-            Southern Glazer's, Breakthru, Gold Coast, Wayne Densch, or NRS daily CSV
+          <div className="text-xs text-slate-400 mt-1">
+            Wayne Densch, Southern Glazer's, Breakthru, Gold Coast, or NRS daily CSV
           </div>
           <input
             type="file"
@@ -134,7 +143,7 @@ export default function InvoicesTab() {
         </label>
 
         {uploadMsg && (
-          <div className="p-3 bg-stone-950 border border-stone-800 rounded-xl text-xs text-amber-300 font-medium">
+          <div className="p-3.5 bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-xl text-xs text-blue-800 dark:text-blue-300 font-semibold">
             {uploadMsg}
           </div>
         )}
@@ -142,72 +151,83 @@ export default function InvoicesTab() {
 
       {/* Pending Invoices (Always Ask Before Saving) */}
       {pending.length > 0 && (
-        <div className="bg-amber-950/30 border border-amber-800/60 p-5 rounded-xl space-y-4">
-          <div className="flex items-center gap-2">
-            <AlertCircle className="w-5 h-5 text-amber-400" />
-            <h3 className="text-sm font-bold text-amber-200">
+        <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/60 p-6 rounded-2xl space-y-4 shadow-sm">
+          <div className="flex items-center gap-2.5">
+            <AlertCircle className="w-5 h-5 text-amber-600" />
+            <h3 className="text-sm font-extrabold text-amber-900 dark:text-amber-200">
               Pending Invoices ({pending.length}) – Review Required Before Saving
             </h3>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {pending.map((inv) => (
-              <div key={inv.id} className="bg-stone-900 border border-stone-800 rounded-xl p-4 space-y-3">
-                <div className="flex justify-between items-start">
-                  <div>
-                    <div className="font-semibold text-white text-sm">{inv.distributor}</div>
-                    <div className="text-xs text-stone-400">
-                      Invoice #{inv.invoice_no} • {inv.invoice_date || "No date"}
+            {pending.map((inv) => {
+              const badge = getDistributorBadge(inv.distributor);
+              return (
+                <div
+                  key={inv.id}
+                  className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm"
+                >
+                  <div className="flex justify-between items-start">
+                    <div>
+                      <div className="flex items-center gap-2">
+                        <span className={`text-xs font-bold px-2 py-0.5 rounded border ${badge.bg} ${badge.text} ${badge.border}`}>
+                          {badge.label}
+                        </span>
+                        <span className="font-mono text-xs text-slate-400">#{inv.invoice_no}</span>
+                      </div>
+                      <div className="text-xs text-slate-500 mt-1">
+                        Delivered: {inv.invoice_date || "No date recorded"}
+                      </div>
+                    </div>
+                    <div className="text-right">
+                      <div className="text-lg font-black text-slate-900 dark:text-white">
+                        ${inv.total?.toFixed(2) || "0.00"}
+                      </div>
+                      <span className="text-[10px] bg-amber-100 text-amber-900 font-bold px-2 py-0.5 rounded-full">
+                        PENDING
+                      </span>
                     </div>
                   </div>
-                  <div className="text-right">
-                    <div className="text-base font-bold text-amber-400">
-                      ${inv.total?.toFixed(2) || "0.00"}
-                    </div>
-                    <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold">
-                      PENDING REVIEW
-                    </span>
-                  </div>
-                </div>
 
-                <div className="flex gap-2 pt-2 border-t border-stone-800">
-                  <button
-                    onClick={() => loadDetail(inv.id)}
-                    className="flex-1 py-1.5 px-3 bg-stone-800 hover:bg-stone-700 text-stone-300 rounded-lg text-xs font-medium transition"
-                  >
-                    View {inv.line_count || 0} Lines
-                  </button>
-                  <button
-                    onClick={() => handlePostInvoice(inv.id)}
-                    disabled={processingAction === inv.id}
-                    className="flex-1 py-1.5 px-3 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center justify-center gap-1 transition"
-                  >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Save to Stock
-                  </button>
-                  <button
-                    onClick={() => handleDiscardInvoice(inv.id)}
-                    disabled={processingAction === inv.id}
-                    className="py-1.5 px-3 bg-stone-800 hover:bg-red-900/40 text-stone-400 hover:text-red-300 rounded-lg text-xs font-medium transition"
-                  >
-                    <XCircle className="w-3.5 h-3.5" />
-                  </button>
+                  <div className="flex gap-2 pt-2 border-t border-slate-100 dark:border-slate-800">
+                    <button
+                      onClick={() => loadDetail(inv.id)}
+                      className="flex-1 py-2 px-3 bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 rounded-xl text-xs font-bold transition"
+                    >
+                      View {inv.line_count || 0} Lines
+                    </button>
+                    <button
+                      onClick={() => handlePostInvoice(inv.id)}
+                      disabled={processingAction === inv.id}
+                      className="flex-1 py-2 px-3 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-1.5 transition shadow-sm"
+                    >
+                      <CheckCircle2 className="w-4 h-4" /> Save to Stock
+                    </button>
+                    <button
+                      onClick={() => handleDiscardInvoice(inv.id)}
+                      disabled={processingAction === inv.id}
+                      className="py-2 px-3 bg-slate-100 hover:bg-red-50 text-slate-400 hover:text-red-600 rounded-xl text-xs font-bold transition"
+                    >
+                      <XCircle className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
-              </div>
-            ))}
+              );
+            })}
           </div>
         </div>
       )}
 
-      {/* Selected Invoice Detail Breakdown */}
+      {/* Selected Invoice Breakdown Modal/Card */}
       {invoiceDetail && (
-        <div className="bg-stone-900 border border-stone-800 rounded-xl p-5 space-y-4">
-          <div className="flex items-center justify-between pb-3 border-b border-stone-800">
+        <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
+          <div className="flex items-center justify-between pb-4 border-b border-slate-100 dark:border-slate-800">
             <div>
-              <h3 className="text-sm font-bold text-white flex items-center gap-2">
-                <span>{invoiceDetail.invoice.distributor}</span>
-                <span className="font-mono text-stone-400">#{invoiceDetail.invoice.invoice_no}</span>
-              </h3>
-              <p className="text-xs text-stone-400">
+              <div className="flex items-center gap-2">
+                <span className="font-extrabold text-base text-slate-900 dark:text-white">{invoiceDetail.invoice.distributor}</span>
+                <span className="font-mono text-xs text-slate-400">#{invoiceDetail.invoice.invoice_no}</span>
+              </div>
+              <p className="text-xs text-slate-400 mt-0.5">
                 Delivered: {invoiceDetail.invoice.invoice_date || "N/A"} • Total: ${invoiceDetail.invoice.total?.toFixed(2)}
               </p>
             </div>
@@ -217,13 +237,13 @@ export default function InvoicesTab() {
                 <>
                   <button
                     onClick={() => handlePostInvoice(invoiceDetail.invoice.id)}
-                    className="px-3 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white rounded-lg text-xs font-semibold flex items-center gap-1"
+                    className="px-4 py-2 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-1.5 shadow-sm"
                   >
-                    <CheckCircle2 className="w-3.5 h-3.5" /> Save to Inventory
+                    <CheckCircle2 className="w-4 h-4" /> Save to Inventory
                   </button>
                   <button
                     onClick={() => handleDiscardInvoice(invoiceDetail.invoice.id)}
-                    className="px-3 py-1.5 bg-red-600/30 hover:bg-red-600/50 text-red-300 rounded-lg text-xs font-medium"
+                    className="px-4 py-2 bg-slate-100 hover:bg-red-50 text-red-600 rounded-xl text-xs font-bold"
                   >
                     Discard
                   </button>
@@ -231,7 +251,7 @@ export default function InvoicesTab() {
               )}
               <button
                 onClick={() => setInvoiceDetail(null)}
-                className="text-stone-400 hover:text-white text-xs px-2 py-1"
+                className="text-slate-400 hover:text-slate-700 text-xs px-2.5 py-1.5"
               >
                 Close
               </button>
@@ -239,32 +259,32 @@ export default function InvoicesTab() {
           </div>
 
           <div className="overflow-x-auto">
-            <table className="w-full text-left text-xs text-stone-300">
-              <thead className="bg-stone-950 text-stone-400 uppercase font-medium border-b border-stone-800">
+            <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+              <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 uppercase font-bold border-b border-slate-100 dark:border-slate-800">
                 <tr>
-                  <th className="py-2 px-3">Description</th>
-                  <th className="py-2 px-3">Matched SKU</th>
-                  <th className="py-2 px-3 text-right">Cases</th>
-                  <th className="py-2 px-3 text-right">Bottles/Units</th>
-                  <th className="py-2 px-3 text-right">Unit Cost</th>
-                  <th className="py-2 px-3 text-right">Extended Total</th>
+                  <th className="py-2.5 px-4">Description</th>
+                  <th className="py-2.5 px-4">Matched SKU</th>
+                  <th className="py-2.5 px-4 text-right">Cases</th>
+                  <th className="py-2.5 px-4 text-right font-black text-blue-600">Bottles/Units</th>
+                  <th className="py-2.5 px-4 text-right">Unit Cost</th>
+                  <th className="py-2.5 px-4 text-right font-black">Extended Total</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-stone-800">
+              <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                 {invoiceDetail.lines.map((l, i) => (
-                  <tr key={i} className="hover:bg-stone-800/40">
-                    <td className="py-2 px-3 font-medium text-white">{l.description}</td>
-                    <td className="py-2 px-3 text-stone-300">
+                  <tr key={i} className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40">
+                    <td className="py-2.5 px-4 font-bold text-slate-900 dark:text-white">{l.description}</td>
+                    <td className="py-2.5 px-4 text-slate-600 dark:text-slate-300">
                       {l.clean_name || l.product_name || (
-                        <span className="text-amber-400 italic">🆕 New Product</span>
+                        <span className="text-amber-600 font-bold">🆕 New Product</span>
                       )}
                     </td>
-                    <td className="py-2 px-3 text-right text-stone-400">{l.cases || "–"}</td>
-                    <td className="py-2 px-3 text-right font-bold text-white">+{l.bottles}</td>
-                    <td className="py-2 px-3 text-right text-stone-200">
+                    <td className="py-2.5 px-4 text-right font-mono text-slate-400">{l.cases || "–"}</td>
+                    <td className="py-2.5 px-4 text-right font-mono font-black text-blue-600 text-sm">+{l.bottles}</td>
+                    <td className="py-2.5 px-4 text-right font-mono text-slate-600">
                       ${l.unit_cost?.toFixed(2) || "–"}
                     </td>
-                    <td className="py-2 px-3 text-right font-semibold text-amber-300">
+                    <td className="py-2.5 px-4 text-right font-mono font-black text-slate-900 dark:text-white text-sm">
                       ${l.line_total?.toFixed(2) || (l.bottles * (l.unit_cost || 0)).toFixed(2)}
                     </td>
                   </tr>
@@ -276,48 +296,61 @@ export default function InvoicesTab() {
       )}
 
       {/* Historical Posted Invoices Table */}
-      <div className="bg-stone-900 border border-stone-800 rounded-xl overflow-hidden">
-        <div className="p-4 border-b border-stone-800 flex items-center justify-between">
-          <h3 className="text-sm font-semibold text-white">Historical Posted Invoices ({posted.length})</h3>
-          <span className="text-xs text-stone-400">Active Stock Updates</span>
+      <div className="bg-white dark:bg-slate-900 border border-slate-200/80 dark:border-slate-800 rounded-2xl overflow-hidden shadow-sm">
+        <div className="p-5 border-b border-slate-100 dark:border-slate-800 flex items-center justify-between">
+          <div>
+            <h3 className="text-base font-bold text-slate-900 dark:text-white">Historical Posted Invoices ({posted.length})</h3>
+            <p className="text-xs text-slate-400 mt-0.5">Verified deliveries posted to store ledger</p>
+          </div>
+          <span className="text-xs font-semibold px-2.5 py-1 bg-emerald-50 text-emerald-700 border border-emerald-200 rounded-lg">
+            Active Stock Updates
+          </span>
         </div>
+
         <div className="overflow-x-auto">
-          <table className="w-full text-left text-xs text-stone-300">
-            <thead className="bg-stone-950 text-stone-400 uppercase font-medium border-b border-stone-800">
+          <table className="w-full text-left text-xs text-slate-700 dark:text-slate-300">
+            <thead className="bg-slate-50 dark:bg-slate-800 text-slate-400 uppercase font-bold border-b border-slate-100 dark:border-slate-800">
               <tr>
-                <th className="py-2.5 px-4">Date</th>
-                <th className="py-2.5 px-4">Distributor</th>
-                <th className="py-2.5 px-4">Invoice #</th>
-                <th className="py-2.5 px-4 text-center">Lines</th>
-                <th className="py-2.5 px-4 text-right">Total Amount</th>
-                <th className="py-2.5 px-4 text-center">Status</th>
-                <th className="py-2.5 px-4 text-center">View</th>
+                <th className="py-3 px-5">Date</th>
+                <th className="py-3 px-5">Distributor</th>
+                <th className="py-3 px-5">Invoice #</th>
+                <th className="py-3 px-5 text-center">Lines</th>
+                <th className="py-3 px-5 text-right font-black">Total Amount</th>
+                <th className="py-3 px-5 text-center">Status</th>
+                <th className="py-3 px-5 text-center">View</th>
               </tr>
             </thead>
-            <tbody className="divide-y divide-stone-800">
-              {posted.map((inv) => (
-                <tr
-                  key={inv.id}
-                  onClick={() => loadDetail(inv.id)}
-                  className="hover:bg-stone-800/40 cursor-pointer transition"
-                >
-                  <td className="py-2.5 px-4 text-stone-400">{inv.invoice_date || "–"}</td>
-                  <td className="py-2.5 px-4 font-semibold text-white">{inv.distributor}</td>
-                  <td className="py-2.5 px-4 font-mono text-stone-300">{inv.invoice_no}</td>
-                  <td className="py-2.5 px-4 text-center text-stone-400">{inv.line_count} lines</td>
-                  <td className="py-2.5 px-4 text-right font-bold text-amber-300">
-                    ${inv.total?.toLocaleString("en-US", { minimumFractionDigits: 2 }) || "–"}
-                  </td>
-                  <td className="py-2.5 px-4 text-center">
-                    <span className="text-[10px] bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-full font-bold">
-                      POSTED
-                    </span>
-                  </td>
-                  <td className="py-2.5 px-4 text-center">
-                    <ChevronRight className="w-4 h-4 text-stone-500 mx-auto" />
-                  </td>
-                </tr>
-              ))}
+            <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+              {posted.map((inv) => {
+                const badge = getDistributorBadge(inv.distributor);
+                return (
+                  <tr
+                    key={inv.id}
+                    onClick={() => loadDetail(inv.id)}
+                    className="hover:bg-slate-50/60 dark:hover:bg-slate-800/40 cursor-pointer transition"
+                  >
+                    <td className="py-3 px-5 text-slate-500 font-mono">{inv.invoice_date || "–"}</td>
+                    <td className="py-3 px-5 font-bold text-slate-900 dark:text-white">
+                      <span className={`text-[11px] font-bold px-2 py-0.5 rounded border ${badge.bg} ${badge.text} ${badge.border}`}>
+                        {badge.label}
+                      </span>
+                    </td>
+                    <td className="py-3 px-5 font-mono text-slate-600 dark:text-slate-300">{inv.invoice_no}</td>
+                    <td className="py-3 px-5 text-center text-slate-500">{inv.line_count} lines</td>
+                    <td className="py-3 px-5 text-right font-mono font-black text-slate-900 dark:text-white text-sm">
+                      ${inv.total?.toLocaleString("en-US", { minimumFractionDigits: 2 }) || "–"}
+                    </td>
+                    <td className="py-3 px-5 text-center">
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 px-2.5 py-0.5 rounded-full font-bold">
+                        POSTED
+                      </span>
+                    </td>
+                    <td className="py-3 px-5 text-center text-slate-400 hover:text-blue-600">
+                      <ChevronRight className="w-4 h-4 mx-auto" />
+                    </td>
+                  </tr>
+                );
+              })}
             </tbody>
           </table>
         </div>

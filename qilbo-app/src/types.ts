@@ -212,6 +212,7 @@ export interface ApiInventoryItem {
   department: string;
   sub_category: string;
   distributor: string | null;
+  brand: string | null;
   case_size: number | null;
   units_per_case: number | null;
   cost: number | null;
@@ -235,6 +236,12 @@ export interface ApiInventoryItem {
   stock_value: number | null;
   is_top_shelf: number;
   do_not_reorder?: number;
+  suggested_cases?: number;
+  profit_per_bottle?: number | null;
+  margin_pct?: number | null;
+  case_cost?: number | null;
+  sales_range_amount?: number | null;
+  sold_range?: number;
 }
 
 export interface ApiSalesSummary {
@@ -245,6 +252,7 @@ export interface ApiSalesSummary {
   by_category: { category: string; qty: number; amount: number }[];
   departments: { department: string; qty: number; amount: number }[];
   top_items: { name: string; size: string | null; qty: number; amount: number }[];
+  top_brands?: { brand: string; category: string; qty: number; amount: number }[];
   daily: { d: string; amount: number }[];
   tracked_profit: number;
   tracked_margin: number | null;
@@ -333,6 +341,7 @@ export interface ApiLedgerDetail {
     department: string;
     sub_category: string;
     distributor: string | null;
+  brand: string | null;
     cost: number | null;
     price: number | null;
     price_source: PriceSource;
@@ -384,4 +393,38 @@ export interface ApiLedgerDetail {
     reason: string;
   }[];
 }
+
+export interface ApiPurchaseOrderLine {
+  id: number;
+  po_id: number;
+  product_id: number;
+  name: string;
+  size: string | null;
+  brand?: string | null;
+  category?: string;
+  cases: number;
+  bottles: number;
+  case_size: number;
+  units_per_case?: number | null;
+  cost: number | null;
+  price: number | null;
+  case_cost: number;
+  line_total: number;
+}
+
+export interface ApiPurchaseOrder {
+  id: number;
+  distributor: string;
+  status: 'draft' | 'ordered';
+  total_cases: number;
+  total_cost: number;
+  meets_minimum: boolean;
+  minimum_text: string;
+  fee_warning: string | null;
+  items: ApiPurchaseOrderLine[];
+  ordered_at?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
 

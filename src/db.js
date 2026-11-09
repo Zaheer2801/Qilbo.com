@@ -238,34 +238,39 @@ export async function adjust(db, productId, delta, reason) {
 
 // Complete inventory query with 6 statuses:
 // OUT, REORDER, OVERSTOCK, NOT SELLING (0 in 60d), NOT COUNTED, OK
-export async function inventory(db, { category, subCategory, distributor, status, isTopShelf, onlyTracked = true } = {}) {
-  const from30 = addDays(todayLocal(), -30);
+export async function inventory(db, { category, subCategory, distributor, brand, status, isTopShelf, onlyTracked = true, start, end, days = 30 } = {}) {
+  const toDate = end || todayLocal();
+  const fromDate = start || addDays(toDate, -days);
   const from60 = addDays(todayLocal(), -60);
-  const conds = ["p.active=1", "p.category NOT IN ('Lottery','Grocery','Tobacco')"];
+  const conds = ["p.active=1"];
   const binds = [];
   if (category) { binds.push(category); conds.push(`p.category = ?${binds.length + 1}`); }
+  else { conds.push("COALESCE(p.category,'') <> 'Lottery'"); }
   if (subCategory) { binds.push(subCategory); conds.push(`p.sub_category = ?${binds.length + 1}`); }
   if (distributor) { binds.push(distributor); conds.push(`p.distributor = ?${binds.length + 1}`); }
+  if (brand) { binds.push(brand); conds.push(`p.brand = ?${binds.length + 1}`); }
   if (isTopShelf) { conds.push("p.is_top_shelf = 1"); }
 
   const rows = await stockMany(db, conds.join(' AND '), binds);
 
-  // 30-day sales
-  const sales30 = (await db.prepare(`SELECT product_id, SUM(qty) q, SUM(amount) a, MAX(sale_date) last FROM sales
-      WHERE sale_date >= ? GROUP BY product_id`).bind(from30).all()).results;
-  const sm30 = new Map(sales30.map(s => [s.product_id, s]));
+  // Sales in selected date range
+  const salesRange = (await db.prepare(`SELECT product_id, SUM(qty) q, SUM(amount) a, MAX(sale_date) last FROM sales
+      WHERE sale_date BETWEEN ? AND ? GROUP BY product_id`).bind(fromDate, toDate).all()).results;
+  const smRange = new Map(salesRange.map(s => [s.product_id, s]));
 
   // 60-day sales for NOT SELLING check
   const sales60 = (await db.prepare(`SELECT product_id, SUM(qty) q FROM sales
       WHERE sale_date >= ? GROUP BY product_id`).bind(from60).all()).results;
   const sm60 = new Map(sales60.map(s => [s.product_id, s.q]));
 
+  const rangeDays = Math.max(1, Math.round((new Date(toDate + 'T12:00:00Z') - new Date(fromDate + 'T12:00:00Z')) / 864e5) + 1);
+
   const out = [];
   for (const r of rows) {
     if (onlyTracked && !r.known) continue;
-    const s30 = sm30.get(r.id) || { q: 0, a: 0, last: null };
+    const sRange = smRange.get(r.id) || { q: 0, a: 0, last: null };
     const q60 = sm60.get(r.id) || 0;
-    const perWeek = s30.q / (30 / 7);
+    const perWeek = sRange.q / (rangeDays / 7);
     const weeks = perWeek > 0 ? r.on_hand / perWeek : null;
     const rp = r.reorder_point ?? Math.max(2, Math.ceil(perWeek * 2)); // two weeks of sales
 
@@ -284,8 +289,21 @@ export async function inventory(db, { category, subCategory, distributor, status
 
     if (status && itemStatus !== status.toUpperCase()) continue;
 
-    const avgPrice = s30.q ? s30.a / s30.q / (1 + TAX) : (r.price || null);
-    const margin = avgPrice && r.cost ? (avgPrice - r.cost) / avgPrice : null;
+    // Case size & order calculations
+    const caseSize = r.case_size || (r.category === 'Beer/RTD' || r.category === 'Beer/Malt' ? 24 : 12);
+    const twoWeekDemand = Math.round(perWeek * 2);
+    const onHand = r.on_hand != null ? r.on_hand : 0;
+    const deficit = Math.max(0, twoWeekDemand - onHand);
+    let suggestedCases = Math.ceil(deficit / caseSize);
+    if (suggestedCases === 0 && (itemStatus === 'OUT' || itemStatus === 'REORDER')) suggestedCases = 1;
+    if (r.do_not_reorder) suggestedCases = 0;
+
+    const unitCost = r.cost != null ? r.cost : (r.price ? +(r.price * 0.75).toFixed(2) : null);
+    const caseCost = unitCost != null ? +(unitCost * caseSize).toFixed(2) : null;
+    const profitPerBottle = (r.price != null && r.cost != null) ? +(r.price - r.cost).toFixed(2) : null;
+    const marginPct = (r.price && r.cost && r.price > 0) ? +(((r.price - r.cost) / r.price) * 100).toFixed(1) : null;
+
+    const avgPrice = sRange.q ? sRange.a / sRange.q / (1 + TAX) : (r.price || null);
     const displayPrice = r.price != null ? `${r.price_source === 'estimated' ? '~' : ''}$${Number(r.price).toFixed(2)}${r.price_warning ? ' (price changed?)' : ''}` : null;
 
     out.push({
@@ -293,13 +311,14 @@ export async function inventory(db, { category, subCategory, distributor, status
       name: r.name,
       clean_name: r.clean_name || r.name,
       size: r.size,
+      brand: r.brand || null,
       category: r.category,
       department: r.department,
       sub_category: r.sub_category,
       is_top_shelf: r.is_top_shelf,
       distributor: r.distributor,
-      case_size: r.case_size,
-      units_per_case: r.units_per_case,
+      case_size: caseSize,
+      units_per_case: r.units_per_case || caseSize,
       cost: r.cost,
       price: r.price,
       price_source: r.price_source || 'estimated',
@@ -310,15 +329,22 @@ export async function inventory(db, { category, subCategory, distributor, status
       basis: r.basis,
       arithmetic: r.arithmetic,
       needs_count: r.needs_count,
-      sold30: s30.q,
+      sold_range: sRange.q,
+      sales_range_amount: +(sRange.a / (1 + TAX)).toFixed(2), // pre-tax sales $ in range
+      sold30: sRange.q,
       sold60: q60,
-      last_sold: s30.last,
+      last_sold: sRange.last,
       per_week: +perWeek.toFixed(1),
       weeks_left: weeks == null ? null : +weeks.toFixed(1),
       reorder_point: rp,
       status: itemStatus,
       avg_price: avgPrice && +avgPrice.toFixed(2),
-      margin: margin == null ? null : +margin.toFixed(3),
+      margin: marginPct == null ? null : +(marginPct / 100).toFixed(3),
+      margin_pct: marginPct,
+      profit_per_bottle: profitPerBottle,
+      case_cost: caseCost,
+      suggested_cases: suggestedCases,
+      two_week_demand: twoWeekDemand,
       stock_value: r.cost ? +(Math.max(r.on_hand ?? 0, 0) * r.cost).toFixed(2) : null
     });
   }
@@ -346,8 +372,12 @@ export async function salesSummary(db, start, end) {
   // Top shelf metrics (premium liquor only; no lottery)
   const topShelf = await db.prepare(`SELECT COALESCE(SUM(s.amount),0) amount, COALESCE(SUM(s.qty),0) qty
       FROM sales s JOIN products p ON p.id=s.product_id
-      WHERE s.sale_date BETWEEN ? AND ? AND p.is_top_shelf = 1 AND p.category = 'Liquor' AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
+      WHERE s.sale_date BETWEEN ? AND ? AND p.is_top_shelf = 1 AND p.category IN ('Tequila/Mezcal', 'Cognac/Brandy', 'Whiskey/Bourbon/Scotch', 'Vodka', 'Rum', 'Gin') AND s.upc NOT LIKE '798028%'`).bind(start, end).first();
   const storeSales = +(tot.amount + deptNonLotto).toFixed(2);
+
+  const topBrands = (await db.prepare(`SELECT COALESCE(p.brand, 'Unknown') brand, COALESCE(p.category, 'Other') category, SUM(s.qty) qty, SUM(s.amount) amount FROM sales s
+      LEFT JOIN products p ON p.id=s.product_id WHERE s.sale_date BETWEEN ? AND ? AND COALESCE(p.category,'') <> 'Lottery' AND s.upc NOT LIKE '798028%' AND p.brand IS NOT NULL
+      GROUP BY 1 ORDER BY amount DESC LIMIT 10`).bind(start, end).all()).results;
 
   return {
     start,
@@ -357,6 +387,7 @@ export async function salesSummary(db, start, end) {
     by_category: byCat,
     departments: dept,
     top_items: top,
+    top_brands: topBrands,
     daily,
     tracked_profit: +(pre - cogs.c).toFixed(2),
     tracked_margin: pre ? +((pre - cogs.c) / pre).toFixed(3) : null,
@@ -472,4 +503,283 @@ export async function getSetting(db, key, dflt = null) {
 
 export async function setSetting(db, key, value) {
   await db.prepare('INSERT INTO settings(key,value) VALUES(?,?) ON CONFLICT(key) DO UPDATE SET value=excluded.value').bind(key, String(value)).run();
+}
+
+// ---------- Purchase Orders (Draft & Ordered) ----------
+
+export const DISTRIBUTORS_CONFIG = {
+  "Southern Glazer's": { min_amount: 200, min_cases: 5, fee_threshold: 425, fee_amount: 30 },
+  "Gold Coast": { min_amount: 300, min_cases: 0, fee_threshold: 0, fee_amount: 0 },
+  "Florida Distributors": { min_amount: 300, min_cases: 0, fee_threshold: 0, fee_amount: 0 },
+  "Breakthru": { min_amount: 0, min_cases: 0, fee_threshold: 0, fee_amount: 0 },
+  "Wayne Densch": { min_amount: 0, min_cases: 0, fee_threshold: 0, fee_amount: 0, is_rep_text: true }
+};
+
+export function checkDistributorMinimum(distributorName, totalCases, totalCost) {
+  const cfg = DISTRIBUTORS_CONFIG[distributorName] || { min_amount: 0, min_cases: 0, fee_threshold: 0, fee_amount: 0 };
+  const todayStr = todayLocal();
+  const todayDate = new Date(todayStr + 'T12:00:00Z');
+  const isMonday = todayDate.getUTCDay() === 1;
+
+  let meetsMin = true;
+  let minText = 'No minimum required';
+  let feeWarning = null;
+
+  if (distributorName === "Southern Glazer's") {
+    meetsMin = (totalCost >= cfg.min_amount) || (totalCases >= cfg.min_cases);
+    minText = `$${cfg.min_amount} or ${cfg.min_cases} cases`;
+    if (totalCost < cfg.fee_threshold && !isMonday && totalCases > 0) {
+      feeWarning = `$30 fee applies (orders under $${cfg.fee_threshold}, waived on Mondays)`;
+    }
+  } else if (distributorName === "Wayne Densch") {
+    meetsMin = true;
+    minText = 'Rep text order (Beer/Malt)';
+  } else if (cfg.min_amount > 0) {
+    meetsMin = totalCost >= cfg.min_amount;
+    minText = `$${cfg.min_amount} minimum`;
+  }
+
+  return { meetsMin, minText, feeWarning };
+}
+
+export async function getDraftPOs(db) {
+  const stdDistributors = ["Southern Glazer's", "Breakthru", "Gold Coast", "Florida Distributors", "Wayne Densch"];
+  
+  const pos = (await db.prepare("SELECT * FROM purchase_orders WHERE status='draft'").all()).results;
+  const poByDist = new Map(pos.map(p => [p.distributor, p]));
+
+  for (const dist of stdDistributors) {
+    if (!poByDist.has(dist)) {
+      const ins = await db.prepare("INSERT INTO purchase_orders(distributor, status) VALUES(?, 'draft') RETURNING *").bind(dist).first();
+      poByDist.set(dist, ins);
+    }
+  }
+
+  const allDraftIds = Array.from(poByDist.values()).map(p => p.id);
+  let allLines = [];
+  if (allDraftIds.length > 0) {
+    const qMarks = allDraftIds.map(() => '?').join(',');
+    allLines = (await db.prepare(`
+      SELECT l.*, p.name, p.clean_name, p.size, p.category, p.brand, p.case_size, p.units_per_case, p.cost, p.price, p.price_source
+      FROM purchase_order_lines l
+      JOIN products p ON p.id = l.product_id
+      WHERE l.po_id IN (${qMarks})
+      ORDER BY p.name ASC
+    `).bind(...allDraftIds).all()).results;
+  }
+
+  const linesByPo = new Map();
+  for (const line of allLines) {
+    if (!linesByPo.has(line.po_id)) linesByPo.set(line.po_id, []);
+    linesByPo.get(line.po_id).push(line);
+  }
+
+  const result = [];
+  for (const po of poByDist.values()) {
+    const lines = linesByPo.get(po.id) || [];
+    const totalCases = lines.reduce((acc, l) => acc + (l.cases || 0), 0);
+    const totalCost = +lines.reduce((acc, l) => acc + (l.line_total || 0), 0).toFixed(2);
+    const { meetsMin, minText, feeWarning } = checkDistributorMinimum(po.distributor, totalCases, totalCost);
+
+    if (po.total_cases !== totalCases || po.total_cost !== totalCost) {
+      await db.prepare("UPDATE purchase_orders SET total_cases=?, total_cost=?, updated_at=datetime('now') WHERE id=?")
+        .bind(totalCases, totalCost, po.id).run();
+      po.total_cases = totalCases;
+      po.total_cost = totalCost;
+    }
+
+    result.push({
+      id: po.id,
+      distributor: po.distributor,
+      status: po.status,
+      total_cases: totalCases,
+      total_cost: totalCost,
+      meets_minimum: meetsMin,
+      minimum_text: minText,
+      fee_warning: feeWarning,
+      items: lines.map(l => ({
+        id: l.id,
+        po_id: l.po_id,
+        product_id: l.product_id,
+        name: l.clean_name || l.name,
+        size: l.size,
+        brand: l.brand,
+        category: l.category,
+        cases: l.cases,
+        bottles: l.bottles,
+        case_size: l.case_size || (l.category === 'Beer/RTD' || l.category === 'Beer/Malt' ? 24 : 12),
+        units_per_case: l.units_per_case,
+        cost: l.cost,
+        price: l.price,
+        case_cost: l.case_cost,
+        line_total: l.line_total
+      }))
+    });
+  }
+
+  return result.sort((a, b) => (b.total_cost - a.total_cost) || a.distributor.localeCompare(b.distributor));
+}
+
+export async function addToDraftPO(db, { productId, cases = 1, distributor }) {
+  const p = await db.prepare("SELECT * FROM products WHERE id=?").bind(productId).first();
+  if (!p) throw new Error("Product not found");
+
+  const dist = distributor || p.distributor || "Southern Glazer's";
+  let po = await db.prepare("SELECT * FROM purchase_orders WHERE distributor=? AND status='draft' LIMIT 1").bind(dist).first();
+  if (!po) {
+    po = await db.prepare("INSERT INTO purchase_orders(distributor, status) VALUES(?, 'draft') RETURNING *").bind(dist).first();
+  }
+
+  const caseSize = p.case_size || (p.category === 'Beer/RTD' || p.category === 'Beer/Malt' ? 24 : 12);
+  const unitCost = p.cost != null ? p.cost : (p.price ? +(p.price * 0.75).toFixed(2) : 0);
+  const caseCost = +(unitCost * caseSize).toFixed(2);
+  const bottles = cases * caseSize;
+  const lineTotal = +(cases * caseCost).toFixed(2);
+
+  await db.prepare(`
+    INSERT INTO purchase_order_lines(po_id, product_id, cases, bottles, case_cost, line_total)
+    VALUES(?, ?, ?, ?, ?, ?)
+    ON CONFLICT(po_id, product_id) DO UPDATE SET
+      cases = excluded.cases,
+      bottles = excluded.bottles,
+      case_cost = excluded.case_cost,
+      line_total = excluded.line_total
+  `).bind(po.id, p.id, cases, bottles, caseCost, lineTotal).run();
+
+  await db.prepare(`
+    UPDATE purchase_orders
+    SET total_cases = (SELECT COALESCE(SUM(cases), 0) FROM purchase_order_lines WHERE po_id=?),
+        total_cost = (SELECT COALESCE(SUM(line_total), 0) FROM purchase_order_lines WHERE po_id=?),
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(po.id, po.id, po.id).run();
+
+  return await getDraftPOs(db);
+}
+
+export async function updateDraftPOLine(db, { lineId, cases }) {
+  const line = await db.prepare("SELECT * FROM purchase_order_lines WHERE id=?").bind(lineId).first();
+  if (!line) throw new Error("PO line not found");
+
+  if (cases <= 0) {
+    await db.prepare("DELETE FROM purchase_order_lines WHERE id=?").bind(lineId).run();
+  } else {
+    const p = await db.prepare("SELECT * FROM products WHERE id=?").bind(line.product_id).first();
+    const caseSize = p?.case_size || (line.bottles / (line.cases || 1)) || 12;
+    const caseCost = line.case_cost;
+    const bottles = cases * caseSize;
+    const lineTotal = +(cases * caseCost).toFixed(2);
+
+    await db.prepare("UPDATE purchase_order_lines SET cases=?, bottles=?, line_total=? WHERE id=?")
+      .bind(cases, bottles, lineTotal, lineId).run();
+  }
+
+  await db.prepare(`
+    UPDATE purchase_orders
+    SET total_cases = (SELECT COALESCE(SUM(cases), 0) FROM purchase_order_lines WHERE po_id=?),
+        total_cost = (SELECT COALESCE(SUM(line_total), 0) FROM purchase_order_lines WHERE po_id=?),
+        updated_at = datetime('now')
+    WHERE id = ?
+  `).bind(line.po_id, line.po_id, line.po_id).run();
+
+  return await getDraftPOs(db);
+}
+
+export async function removeLineFromDraftPO(db, { lineId, poId, productId }) {
+  let targetPoId = poId;
+  if (lineId) {
+    const l = await db.prepare("SELECT po_id FROM purchase_order_lines WHERE id=?").bind(lineId).first();
+    if (l) targetPoId = l.po_id;
+    await db.prepare("DELETE FROM purchase_order_lines WHERE id=?").bind(lineId).run();
+  } else if (poId && productId) {
+    await db.prepare("DELETE FROM purchase_order_lines WHERE po_id=? AND product_id=?").bind(poId, productId).run();
+  }
+
+  if (targetPoId) {
+    await db.prepare(`
+      UPDATE purchase_orders
+      SET total_cases = (SELECT COALESCE(SUM(cases), 0) FROM purchase_order_lines WHERE po_id=?),
+          total_cost = (SELECT COALESCE(SUM(line_total), 0) FROM purchase_order_lines WHERE po_id=?),
+          updated_at = datetime('now')
+      WHERE id = ?
+    `).bind(targetPoId, targetPoId, targetPoId).run();
+  }
+
+  return await getDraftPOs(db);
+}
+
+export async function addAllReorderToDraftPO(db, { distributor }) {
+  if (!distributor) throw new Error("Distributor is required");
+  const items = await inventory(db, { distributor, onlyTracked: false });
+  const reorderItems = items.filter(it => (it.status === 'REORDER' || it.status === 'OUT') && !it.do_not_reorder);
+
+  for (const it of reorderItems) {
+    const cases = it.suggested_cases > 0 ? it.suggested_cases : 1;
+    await addToDraftPO(db, { productId: it.id, cases, distributor });
+  }
+
+  return await getDraftPOs(db);
+}
+
+export async function clearDraftPO(db, { distributor, poId }) {
+  let po;
+  if (poId) {
+    po = await db.prepare("SELECT * FROM purchase_orders WHERE id=?").bind(poId).first();
+  } else if (distributor) {
+    po = await db.prepare("SELECT * FROM purchase_orders WHERE distributor=? AND status='draft'").bind(distributor).first();
+  }
+  if (po) {
+    await db.prepare("DELETE FROM purchase_order_lines WHERE po_id=?").bind(po.id).run();
+    await db.prepare("UPDATE purchase_orders SET total_cases=0, total_cost=0, updated_at=datetime('now') WHERE id=?").bind(po.id).run();
+  }
+  return await getDraftPOs(db);
+}
+
+export async function markPOAsOrdered(db, { poId, distributor }) {
+  let po;
+  if (poId) {
+    po = await db.prepare("SELECT * FROM purchase_orders WHERE id=? AND status='draft'").bind(poId).first();
+  } else if (distributor) {
+    po = await db.prepare("SELECT * FROM purchase_orders WHERE distributor=? AND status='draft'").bind(distributor).first();
+  }
+  if (!po) throw new Error("Draft PO not found");
+
+  await db.prepare("UPDATE purchase_orders SET status='ordered', ordered_at=datetime('now'), updated_at=datetime('now') WHERE id=?")
+    .bind(po.id).run();
+
+  return {
+    orderedPoId: po.id,
+    drafts: await getDraftPOs(db)
+  };
+}
+
+export async function getPOHistory(db, limit = 50) {
+  const pos = (await db.prepare(`
+    SELECT * FROM purchase_orders WHERE status='ordered' ORDER BY ordered_at DESC LIMIT ?
+  `).bind(limit).all()).results;
+
+  const result = [];
+  for (const po of pos) {
+    const lines = (await db.prepare(`
+      SELECT l.*, p.name, p.clean_name, p.size, p.category, p.brand
+      FROM purchase_order_lines l
+      JOIN products p ON p.id = l.product_id
+      WHERE l.po_id = ?
+    `).bind(po.id).all()).results;
+    result.push({
+      ...po,
+      lines: lines.map(l => ({
+        id: l.id,
+        product_id: l.product_id,
+        name: l.clean_name || l.name,
+        size: l.size,
+        brand: l.brand,
+        cases: l.cases,
+        bottles: l.bottles,
+        case_cost: l.case_cost,
+        line_total: l.line_total
+      }))
+    });
+  }
+  return result;
 }

@@ -10,14 +10,36 @@ html {
 }
 
 body {
-  background: #070A11;
-  color: #F8FAFC;
+  background-color: #F6F7FB;
+  color: #0F172A;
   font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+
+.dark body, body.dark {
+  background-color: #0B0F19;
+  color: #F8FAFC;
 }
 
 h1, h2, h3, h4, h5, h6 {
   font-family: 'Plus Jakarta Sans', system-ui, -apple-system, sans-serif;
   letter-spacing: -0.02em;
+}
+
+/* Custom modern scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #CBD5E1;
+  border-radius: 9999px;
+}
+.dark ::-webkit-scrollbar-thumb {
+  background: #334155;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -29,9 +29,9 @@
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
 
-    <!-- Register PWA Service Worker -->
+    <!-- Register PWA Service Worker (only in production HTTPS) -->
     <script>
-      if ("serviceWorker" in navigator) {
+      if ("serviceWorker" in navigator && location.protocol === "https:") {
         window.addEventListener("load", () => {
           navigator.serviceWorker
             .register("/sw.js")

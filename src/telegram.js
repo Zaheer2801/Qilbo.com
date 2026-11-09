@@ -10,7 +10,9 @@ import {
   addDays,
   getSetting,
   setSetting,
-  distributorOrderSuggestions
+  distributorOrderSuggestions,
+  getDraftPOs,
+  addToDraftPO
 } from './db.js';
 import { askAssistant, extractInvoice } from './ai.js';
 import { stageInvoice, postInvoice, ingestSalesCsv, dateFromFilename } from './ingest.js';
@@ -67,6 +69,7 @@ Just type normally, e.g. <i>how many Don Julio 750 do I have?</i> or <i>I have 4
 /sales – yesterday's sales (/sales week or /sales 2026-11-05)
 /low – items out of stock or to reorder
 /orders – distributor order suggestions
+/po – view draft purchase orders (/po add 2 cases don julio blanco 750)
 /invoices – recent distributor invoices
 /undo – reverse your last count/adjust/price change
 /dashboard – link to web dashboard
@@ -241,6 +244,39 @@ async function onCommand(env, chatId, text) {
       lines.push('');
     }
     return send(env, chatId, lines.join('\n') || 'No orders needed right now.');
+  }
+
+  if (cmd === '/po') {
+    if (arg.toLowerCase().startsWith('add ')) {
+      const m = arg.slice(4).trim().match(/^(\d+)\s*(?:cases?|cs)?\s+(.+)$/i);
+      if (!m) return send(env, chatId, 'Use: <code>/po add 2 cases don julio blanco 750</code>');
+      const cases = Number(m[1]);
+      const q = m[2].trim();
+      const rows = await searchProducts(db, q, 5);
+      if (!rows.length) return send(env, chatId, `No product found for "${esc(q)}"`);
+      if (rows.length > 1 && !exactish(rows[0], q)) {
+        return send(env, chatId, 'Which one?\n' + rows.map(p => `• ${esc(pname(p))}`).join('\n') + '\nType the full name.');
+      }
+      const p = rows[0];
+      const drafts = await addToDraftPO(db, { productId: p.id, cases, distributor: p.distributor });
+      const po = drafts.find(d => d.distributor === (p.distributor || "Southern Glazer's"));
+      return send(env, chatId, `🛒 Added <b>${cases} case(s)</b> of <b>${esc(pname(p))}</b> to <b>${esc(po?.distributor || p.distributor || "Southern Glazer's")}</b> draft PO.\nTotal: <b>${po?.total_cases || cases} cases</b> (${money(po?.total_cost)})\nMin: ${po?.minimum_text || '–'} ${po?.meets_minimum ? '✅' : '⚠️ Below minimum'}${po?.fee_warning ? '\n⚠️ <i>' + esc(po.fee_warning) + '</i>' : ''}`);
+    }
+
+    const drafts = await getDraftPOs(db);
+    const active = drafts.filter(d => d.items && d.items.length > 0);
+    if (!active.length) {
+      return send(env, chatId, '📝 <b>Draft Purchase Orders</b>\n\nNo items in any draft POs right now.\nUse <code>/po add 2 cases don julio blanco 750</code> or tap "Add to PO" on any item in the dashboard.');
+    }
+    const lines = ['<b>📝 Draft Purchase Orders</b>\n'];
+    for (const d of active) {
+      lines.push(`<b>${esc(d.distributor)}</b>: ${d.total_cases} cases (${money(d.total_cost)})`);
+      lines.push(`Min: ${d.minimum_text} ${d.meets_minimum ? '✅' : '⚠️ Below minimum'}`);
+      if (d.fee_warning) lines.push(`⚠️ <i>${esc(d.fee_warning)}</i>`);
+      lines.push(...d.items.map(it => `  • ${it.cases} cs ${esc(it.name)} ${it.size || ''} (${money(it.line_total)})`));
+      lines.push('');
+    }
+    return send(env, chatId, lines.join('\n'));
   }
 
   if (cmd === '/invoices') {

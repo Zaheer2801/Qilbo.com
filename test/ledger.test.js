@@ -55,8 +55,9 @@ async function runTests() {
   console.log("============================================================");
 
   const nativeDb = new DatabaseSync(":memory:");
-  const sql = fs.readFileSync("migrate/merged.sql", "utf8");
-  nativeDb.exec(sql);
+  nativeDb.exec(fs.readFileSync("migrate/merged.sql", "utf8"));
+  nativeDb.exec(fs.readFileSync("migrate/v2_categories_brands.sql", "utf8"));
+  nativeDb.exec(fs.readFileSync("schema.sql", "utf8"));
   const d1 = createD1Emulator(nativeDb);
 
   // 1. Acceptance Test: Don Julio Reposado 750 (ID 928)

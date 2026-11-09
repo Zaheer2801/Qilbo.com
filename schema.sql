@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS products (
   active         INTEGER DEFAULT 1,
   is_top_shelf   INTEGER DEFAULT 0,
   do_not_reorder INTEGER DEFAULT 0,
+  brand          TEXT,
   created_at     TEXT DEFAULT (datetime('now')),
   updated_at     TEXT DEFAULT (datetime('now'))
 );
@@ -116,9 +117,35 @@ CREATE TABLE IF NOT EXISTS settings (
   value TEXT
 );
 
+CREATE TABLE IF NOT EXISTS purchase_orders (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  distributor  TEXT NOT NULL,
+  status       TEXT NOT NULL DEFAULT 'draft',
+  total_cases  REAL DEFAULT 0,
+  total_cost   REAL DEFAULT 0,
+  notes        TEXT,
+  ordered_at   TEXT,
+  created_at   TEXT DEFAULT (datetime('now')),
+  updated_at   TEXT DEFAULT (datetime('now'))
+);
+
+CREATE TABLE IF NOT EXISTS purchase_order_lines (
+  id           INTEGER PRIMARY KEY AUTOINCREMENT,
+  po_id        INTEGER NOT NULL REFERENCES purchase_orders(id) ON DELETE CASCADE,
+  product_id   INTEGER NOT NULL REFERENCES products(id),
+  cases        REAL NOT NULL DEFAULT 1,
+  bottles      REAL,
+  case_cost    REAL,
+  line_total   REAL,
+  created_at   TEXT DEFAULT (datetime('now')),
+  UNIQUE(po_id, product_id)
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_product ON sales(product_id, sale_date);
 CREATE INDEX IF NOT EXISTS idx_lines_product ON invoice_lines(product_id);
 CREATE INDEX IF NOT EXISTS idx_counts_product ON stock_counts(product_id, counted_at);
 CREATE INDEX IF NOT EXISTS idx_adj_product ON adjustments(product_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_products_name ON products(name);
 CREATE INDEX IF NOT EXISTS idx_products_clean ON products(clean_name);
+CREATE INDEX IF NOT EXISTS idx_po_distributor ON purchase_orders(distributor, status);
+CREATE INDEX IF NOT EXISTS idx_po_lines ON purchase_order_lines(po_id);
