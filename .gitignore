@@ -17,3 +17,4 @@ __pycache__/
 reference/
 screenshots/
 test_files/
+*.LOCAL.gs

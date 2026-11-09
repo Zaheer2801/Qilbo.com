@@ -9,7 +9,7 @@ crons = ["45 * * * *", "30 * * * 1"]
 [[d1_databases]]
 binding = "DB"
 database_name = "discount-liquor"
-database_id = "PASTE_DATABASE_ID_HERE"
+database_id = "6c243ecc-4805-49f3-b0f0-6a4b5504bcd0"
 
 # Invoice PDFs/photos and product images stored in Cloudflare R2
 [[r2_buckets]]
@@ -23,7 +23,7 @@ binding = "ASSETS"
 
 [vars]
 GEMINI_MODEL = "gemini-3.5-flash"
-PUBLIC_URL = ""
+PUBLIC_URL = "https://discount-liquor.zshaik2801.workers.dev"
 
 # Secrets to set via `npx wrangler secret put NAME` (never commit):
 # - TELEGRAM_BOT_TOKEN
