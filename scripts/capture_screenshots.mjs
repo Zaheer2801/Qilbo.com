@@ -57,25 +57,6 @@ async function main() {
     await new Promise((r) => setTimeout(r, 2000));
   }
 
-  // Pre-seed draft PO items
-  await page.evaluate(async () => {
-    try {
-      await fetch('/api/po/item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: 928, cases: 2, distributor: "Southern Glazer's" })
-      });
-      await fetch('/api/po/item', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ product_id: 9, cases: 4, distributor: "Wayne Densch" })
-      });
-    } catch (e) {
-      console.error('Pre-seed error:', e);
-    }
-  });
-  await new Promise((r) => setTimeout(r, 1000));
-
   // 2. Desktop Screenshots
   console.log('Capturing Desktop screenshots...');
   for (const tab of TABS) {

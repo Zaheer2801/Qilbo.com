@@ -246,6 +246,7 @@ export default function OrdersTab() {
 
   const grandTotalCases = draftPOs.reduce((acc, o) => acc + o.total_cases, 0);
   const grandTotalCost = draftPOs.reduce((acc, o) => acc + o.total_cost, 0);
+  const activeDraftsCount = draftPOs.filter((o) => o.items && o.items.length > 0).length;
 
   const filteredPOs = draftPOs.filter((o) => {
     if (selectedDistributor === "all") return true;
@@ -348,7 +349,7 @@ export default function OrdersTab() {
                 : "bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 hover:bg-slate-200"
             }`}
           >
-            All Drafts ({draftPOs.length})
+            All Drafts ({activeDraftsCount})
           </button>
           {draftPOs.map((d) => {
             const badge = getDistributorBadge(d.distributor);

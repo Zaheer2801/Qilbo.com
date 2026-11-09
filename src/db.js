@@ -547,15 +547,9 @@ export async function getDraftPOs(db) {
   
   const pos = (await db.prepare("SELECT * FROM purchase_orders WHERE status='draft'").all()).results;
   const poByDist = new Map(pos.map(p => [p.distributor, p]));
+  const displayDistributors = [...new Set([...pos.map(p => p.distributor), ...stdDistributors])];
 
-  for (const dist of stdDistributors) {
-    if (!poByDist.has(dist)) {
-      const ins = await db.prepare("INSERT INTO purchase_orders(distributor, status) VALUES(?, 'draft') RETURNING *").bind(dist).first();
-      poByDist.set(dist, ins);
-    }
-  }
-
-  const allDraftIds = Array.from(poByDist.values()).map(p => p.id);
+  const allDraftIds = pos.map(p => p.id);
   let allLines = [];
   if (allDraftIds.length > 0) {
     const qMarks = allDraftIds.map(() => '?').join(',');
@@ -575,23 +569,22 @@ export async function getDraftPOs(db) {
   }
 
   const result = [];
-  for (const po of poByDist.values()) {
-    const lines = linesByPo.get(po.id) || [];
+  for (const dist of displayDistributors) {
+    const po = poByDist.get(dist);
+    const lines = po ? (linesByPo.get(po.id) || []) : [];
     const totalCases = lines.reduce((acc, l) => acc + (l.cases || 0), 0);
     const totalCost = +lines.reduce((acc, l) => acc + (l.line_total || 0), 0).toFixed(2);
-    const { meetsMin, minText, feeWarning } = checkDistributorMinimum(po.distributor, totalCases, totalCost);
+    const { meetsMin, minText, feeWarning } = checkDistributorMinimum(dist, totalCases, totalCost);
 
-    if (po.total_cases !== totalCases || po.total_cost !== totalCost) {
+    if (po && (po.total_cases !== totalCases || po.total_cost !== totalCost)) {
       await db.prepare("UPDATE purchase_orders SET total_cases=?, total_cost=?, updated_at=datetime('now') WHERE id=?")
         .bind(totalCases, totalCost, po.id).run();
-      po.total_cases = totalCases;
-      po.total_cost = totalCost;
     }
 
     result.push({
-      id: po.id,
-      distributor: po.distributor,
-      status: po.status,
+      id: po ? po.id : 0,
+      distributor: dist,
+      status: 'draft',
       total_cases: totalCases,
       total_cost: totalCost,
       meets_minimum: meetsMin,
@@ -730,7 +723,7 @@ export async function clearDraftPO(db, { distributor, poId }) {
   }
   if (po) {
     await db.prepare("DELETE FROM purchase_order_lines WHERE po_id=?").bind(po.id).run();
-    await db.prepare("UPDATE purchase_orders SET total_cases=0, total_cost=0, updated_at=datetime('now') WHERE id=?").bind(po.id).run();
+    await db.prepare("DELETE FROM purchase_orders WHERE id=?").bind(po.id).run();
   }
   return await getDraftPOs(db);
 }
