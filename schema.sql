@@ -141,6 +141,24 @@ CREATE TABLE IF NOT EXISTS purchase_order_lines (
   UNIQUE(po_id, product_id)
 );
 
+CREATE TABLE IF NOT EXISTS category_review_suggestions (
+  product_id INTEGER PRIMARY KEY REFERENCES products(id),
+  name TEXT NOT NULL,
+  clean_name TEXT,
+  size TEXT,
+  department TEXT,
+  current_category TEXT,
+  current_sub_category TEXT,
+  suggested_category TEXT NOT NULL,
+  suggested_sub_category TEXT NOT NULL,
+  suggested_brand TEXT,
+  confidence REAL NOT NULL,
+  reason TEXT,
+  source TEXT DEFAULT 'brand_match',
+  status TEXT DEFAULT 'pending',
+  created_at TEXT DEFAULT (datetime('now'))
+);
+
 CREATE INDEX IF NOT EXISTS idx_sales_product ON sales(product_id, sale_date);
 CREATE INDEX IF NOT EXISTS idx_lines_product ON invoice_lines(product_id);
 CREATE INDEX IF NOT EXISTS idx_counts_product ON stock_counts(product_id, counted_at);

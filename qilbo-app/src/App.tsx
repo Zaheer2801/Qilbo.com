@@ -14,6 +14,7 @@ import {
   X,
   Sun,
   Moon,
+  Sparkles,
 } from "lucide-react";
 import type { ApiSummaryResponse, AppState } from "./types";
 import { api } from "./lib/api";
@@ -30,6 +31,7 @@ import OrdersTab from "./components/dashboard/OrdersTab";
 // Floating Chat & Logo
 import QilboChatbot from "./components/dashboard/QilboChatbot";
 import { QilboLogo } from "./components/ui/QilboLogo";
+import ReviewCategoriesModal from "./components/dashboard/ReviewCategoriesModal";
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
@@ -40,23 +42,23 @@ const TABS = [
 ];
 
 const SIDEBAR_CATEGORIES = [
-  { name: "Spirits", count: 782 },
-  { name: "Beer & RTD", count: 243 },
-  { name: "Drinks & Mixers", count: 238 },
-  { name: "Tobacco", count: 128 },
-  { name: "Wine", count: 58 },
-  { name: "Snacks & Grocery", count: 46 },
-  { name: "Lottery", count: 45 },
-  { name: "Vodka", count: 131 },
-  { name: "Tequila/Mezcal", count: 92 },
-  { name: "Whiskey", count: 96 },
-  { name: "Beer", count: 153 },
-  { name: "RTD/Seltzer", count: 90 },
-  { name: "Cognac/Brandy", count: 55 },
-  { name: "Liqueur", count: 27 },
-  { name: "Rum", count: 29 },
+  { name: "Spirits", count: 536 },
+  { name: "Beer & RTD", count: 279 },
+  { name: "Drinks & Mixers", count: 332 },
+  { name: "Tobacco", count: 168 },
+  { name: "Snacks & Grocery", count: 100 },
+  { name: "Wine", count: 71 },
+  { name: "Lottery", count: 54 },
+  { name: "Vodka", count: 145 },
+  { name: "Whiskey", count: 121 },
+  { name: "Tequila/Mezcal", count: 103 },
+  { name: "Beer", count: 168 },
+  { name: "RTD/Seltzer", count: 111 },
+  { name: "Cognac/Brandy", count: 61 },
+  { name: "Liqueur", count: 35 },
+  { name: "Rum", count: 33 },
   { name: "Gin", count: 22 },
-  { name: "Other Spirits – review", count: 330 },
+  { name: "Other Spirits – review", count: 16 },
 ];
 
 const SIDEBAR_DISTRIBUTORS = [
@@ -79,6 +81,7 @@ export default function App() {
   const [isSettingsOpen, setIsSettingsOpen] = useState(false);
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [isDarkMode, setIsDarkMode] = useState(false);
+  const [isReviewCategoriesOpen, setIsReviewCategoriesOpen] = useState(false);
 
   // Global Filter State for Inventory
   const [inventoryCategory, setInventoryCategory] = useState<string>("all");
@@ -507,6 +510,27 @@ export default function App() {
                 <div className="text-blue-600 font-mono text-[11px] font-bold pt-1">Florida Tax: 7% Sales Tax Separated</div>
               </div>
 
+              <div className="bg-blue-50/70 dark:bg-blue-950/30 border border-blue-200/80 dark:border-blue-900/50 p-3.5 rounded-2xl flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <div className="font-extrabold text-slate-900 dark:text-white text-sm flex items-center gap-1.5">
+                    <Sparkles className="w-4 h-4 text-blue-600" />
+                    <span>Review Categories</span>
+                  </div>
+                  <div className="text-slate-500 text-[11px]">
+                    Review suggestions for &quot;Other Spirits – review&quot; items
+                  </div>
+                </div>
+                <button
+                  onClick={() => {
+                    setIsSettingsOpen(false);
+                    setIsReviewCategoriesOpen(true);
+                  }}
+                  className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white font-extrabold rounded-xl text-xs transition shadow-2xs shrink-0 flex items-center gap-1"
+                >
+                  <Sparkles className="w-3.5 h-3.5" /> Open
+                </button>
+              </div>
+
               <div className="bg-slate-50 dark:bg-slate-800/50 border border-slate-200/80 dark:border-slate-800 p-3.5 rounded-2xl space-y-1.5">
                 <div className="font-extrabold text-slate-900 dark:text-white text-sm">Theme Preference</div>
                 <div className="flex items-center justify-between pt-1">
@@ -541,6 +565,15 @@ export default function App() {
           </div>
         </div>
       )}
+
+      {/* Review Categories Modal */}
+      <ReviewCategoriesModal
+        isOpen={isReviewCategoriesOpen}
+        onClose={() => setIsReviewCategoriesOpen(false)}
+        onApplied={() => {
+          loadSummaryData(selectedDate);
+        }}
+      />
     </div>
   );
 }

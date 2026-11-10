@@ -1,5 +1,6 @@
 // Daily NRS sales CSV ingest + invoice staging & posting for Discount Liquor
 import { normUpc, TAX, addDays } from './db.js';
+import { classifyNewProduct } from './classify.js';
 
 export function parseCsv(text) {
   const rows = [];
@@ -44,68 +45,10 @@ export function extractSizeAndCleanName(name) {
   return { clean_name: name || '', size: null };
 }
 
-// Category and Department classification rules from Qilbo NRS parser
-export function classifyProduct(name, unitPrice = 0) {
-  const lower = String(name || '').toLowerCase();
-
-  // 1. Cutwaters & Ready-to-Drink
-  if (["cutwater", "cut water", "clubtails", "buzzballz", "high noon", "cayman jack", "monaco", "beatbox", "tiki rum", "white russian"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Cutwaters & Ready-to-Drink", category: "Beer/RTD" };
-  }
-  // 2. Tequila
-  if (["tequila", "don julio", "patron", "corralejo", "casamigos", "el mayor", "lunazul", "margaritaville", "cuervo", "herradura", "1800", "reposado", "blanco", "anejo", "añejo"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Tequila", category: "Liquor" };
-  }
-  // 3. Cognac & Brandy
-  if (["cognac", "hennessy", "remy martin", "courvoisier", "martell", "brandy", "e&j", "paul masson"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Cognac & Brandy", category: "Liquor" };
-  }
-  // 4. Whiskey & Bourbon
-  if (["whisky", "whiskey", "bourbon", "scotch", "fireball", "jim beam", "crown royal", "jack daniel", "makers mark", "woodford", "jameson"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Whiskey & Bourbon", category: "Liquor" };
-  }
-  // 5. Vodka
-  if (["vodka", "amsterdam", "crystal palace", "tito", "grey goose", "ciroc", "smirnoff", "absolut", "ketel"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Vodka", category: "Liquor" };
-  }
-  // 6. Rum
-  if (["rum", "bacardi", "captain morgan", "malibu"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Rum", category: "Liquor" };
-  }
-  // 7. Gin
-  if (["gin", "tanqueray", "bombay", "beefeater", "hendrick"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Gin", category: "Liquor" };
-  }
-  // 8. Cordials, Shooters, & 99s
-  if (["99 ", "99 pink", "99 sour", "99 proof", "schnapps", "baileys", "kahlua", "jagermeister", "benjamin banana"].some(k => lower.includes(k))) {
-    return { department: "Liquor", sub_category: "Cordials & Shooters", category: "Liquor" };
-  }
-  // 9. Beer & Malt Beverages
-  if (["beer", "bud", "busch", "modelo", "corona", "heineken", "miller", "rolling rock", "natural ice", "colt 45", "chelada", "twisted tea", "warity"].some(k => lower.includes(k))) {
-    return { department: "Beer", sub_category: "Beer & Malt", category: "Beer/RTD" };
-  }
-  // 10. Tobacco & Cigars
-  if (["cigar", "cigarette", "menthol", "305", "seneca", "camel", "dutch masters", "tobacco", "newport", "marlboro"].some(k => lower.includes(k))) {
-    return { department: "Tobacco", sub_category: "Tobacco & Cigars", category: "Tobacco" };
-  }
-  // 11. Beverages (Non-Alcoholic)
-  if (["soda", "cola", "tea", "water", "pepsi", "coca", "fanta", "red bull", "powerade", "welch", "sunkist", "ginger beer", "alani", "saratoga", "lipton"].some(k => lower.includes(k))) {
-    return { department: "Beverages", sub_category: "Non-Alcoholic", category: "Grocery" };
-  }
-  // 12. Wine & Sangria
-  if (["wine", "sangria", "crimes", "rossi", "chardonnay", "cabernet", "moscato", "san antonio"].some(k => lower.includes(k))) {
-    return { department: "Wine", sub_category: "Wine & Sangria", category: "Wine" };
-  }
-  // 13. Lottery / Scratchers
-  if (["lottery", "scratch", "cash", "blowout", "bingo", "power 20", "black pearls", "lucky buks", "wild 9s", "100 x", "spectaculer"].some(k => lower.includes(k))) {
-    return { department: "Lottery", sub_category: "Scratch-Off", category: "Lottery" };
-  }
-
-  // Fallback
-  if (unitPrice >= 12.0) {
-    return { department: "Liquor", sub_category: "Other Spirits", category: "Liquor" };
-  }
-  return { department: "General Merchandise", sub_category: "General", category: "Grocery" };
+// Category and Department classification rules using typo-tolerant brand & keyword engine
+export function classifyProduct(name, unitPrice = 0, upc = '') {
+  const { clean_name } = extractSizeAndCleanName(name);
+  return classifyNewProduct({ name, cleanName: clean_name, unitPrice, upc });
 }
 
 const TOP_SHELF_KEYWORDS = [
@@ -120,7 +63,7 @@ const TOP_SHELF_KEYWORDS = [
 export function isTopShelfItem(name, department, subCategory, unitPrice = 0) {
   const lower = String(name || '').toLowerCase();
   if (unitPrice >= 25.0) return true;
-  if (department === "Liquor" && ["Cognac & Brandy", "Tequila", "Whiskey & Bourbon"].includes(subCategory) && unitPrice >= 18.0) {
+  if (["Liquor", "Spirits"].includes(department) && ["Cognac & Brandy", "Cognac/Brandy", "Tequila", "Tequila/Mezcal", "Whiskey & Bourbon", "Whiskey"].includes(subCategory) && unitPrice >= 18.0) {
     return true;
   }
   for (const kw of TOP_SHELF_KEYWORDS) {

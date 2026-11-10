@@ -1,4 +1,5 @@
 // Data access + stock ledger engine for Discount Liquor (Cloudflare D1 / SQLite)
+import { classifyNewProduct } from './classify.js';
 export const TZ = 'America/New_York';
 export const TAX = 0.07; // Lake County FL: register amounts include 7% sales tax
 
@@ -24,14 +25,8 @@ export function tzOffsetHours(d = new Date()) {
 
 const LOTTERY_PREFIX = '798028';
 export function guessCategory(name, upc = '') {
-  const n = (name || '').toLowerCase();
-  if (normUpc(upc).startsWith(LOTTERY_PREFIX)) return 'Lottery';
-  if (/payout|scratch|lotto|lottery/.test(n)) return 'Lottery';
-  if (/cigar|newport|marlboro|camel|kool|305|seneca|black ?& ?mild|swisher|american spirit|vape|pall mall|backwood/.test(n)) return 'Tobacco';
-  if (/wine|moscato|stella rosa|stella |sangria|barefoot|sutter|carlo rossi|andre|arbor mist|yellow tail|xxl|\bport\b|merlot|cabernet|chardonnay|pinot|riesling|prosecco|asti/.test(n)) return 'Wine';
-  if (/beer|lager|\bale\b|ipa|bud|busch|natural ice|michelob|micgelab|coors|miller|corona|modelo|heineken|stella artois|colt|steel reserve|olde english|schlitz|pabst|dos equis|tecate|victoria|pacifico|red stripe|guinness|mike|white claw|truly|twisted tea|seltzer|cut ?water|high noon|cayman jack|buzzballz|md 20|md tangy|four loko|smirnoff ice|chelada|crazy stallion/.test(n)) return 'Beer/RTD';
-  if (/coca|cola|pepsi|sprite|fanta|water|juice|red ?bull|monster|gatorade|arizona|starbucks|snack|chips|candy|soda|jarritos|schweppes|sunkist|a ?& ?w|minute maid|core power|energy|nescafe|welch|tahitian/.test(n)) return 'Grocery';
-  return 'Liquor';
+  const c = classifyNewProduct({ name, upc });
+  return c.category;
 }
 
 // ---------- products ----------
@@ -53,14 +48,19 @@ export async function addUpc(db, upc, productId) {
 }
 
 export async function createProduct(db, p) {
-  const r = await db.prepare(`INSERT INTO products(name,clean_name,size,category,department,sub_category,is_top_shelf,distributor,case_size,units_per_case,units_per_pack,cost,price,price_source)
-     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).bind(
+  const c = classifyNewProduct({ name: p.name, cleanName: p.clean_name, department: p.department, brand: p.brand, unitPrice: p.price, upc: p.upc });
+  const category = p.category || c.category;
+  const subCategory = p.sub_category || c.sub_category;
+  const department = p.department || c.department;
+  const brand = p.brand || c.brand;
+  const r = await db.prepare(`INSERT INTO products(name,clean_name,size,category,department,sub_category,is_top_shelf,distributor,case_size,units_per_case,units_per_pack,cost,price,price_source,brand)
+     VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?) RETURNING id`).bind(
     p.name,
     p.clean_name || p.name,
     p.size || null,
-    p.category || guessCategory(p.name, p.upc),
-    p.department || 'Liquor',
-    p.sub_category || null,
+    category,
+    department,
+    subCategory,
     p.is_top_shelf ? 1 : 0,
     p.distributor || null,
     p.case_size || null,
@@ -68,7 +68,8 @@ export async function createProduct(db, p) {
     p.units_per_pack || null,
     p.cost ?? null,
     p.price ?? null,
-    p.price_source || 'estimated'
+    p.price_source || 'estimated',
+    brand
   ).first();
   if (p.upc) await addUpc(db, p.upc, r.id);
   return r.id;
