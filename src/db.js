@@ -24,8 +24,8 @@ export function tzOffsetHours(d = new Date()) {
 }
 
 const LOTTERY_PREFIX = '798028';
-export function guessCategory(name, upc = '') {
-  const c = classifyNewProduct({ name, upc });
+export function guessCategory(name, upc = '', department = '') {
+  const c = classifyNewProduct({ name, upc, department });
   return c.category;
 }
 

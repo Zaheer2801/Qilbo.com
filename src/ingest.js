@@ -46,9 +46,9 @@ export function extractSizeAndCleanName(name) {
 }
 
 // Category and Department classification rules using typo-tolerant brand & keyword engine
-export function classifyProduct(name, unitPrice = 0, upc = '') {
+export function classifyProduct(name, unitPrice = 0, upc = '', department = '') {
   const { clean_name } = extractSizeAndCleanName(name);
-  return classifyNewProduct({ name, cleanName: clean_name, unitPrice, upc });
+  return classifyNewProduct({ name, cleanName: clean_name, unitPrice, upc, department });
 }
 
 const TOP_SHELF_KEYWORDS = [
@@ -119,7 +119,7 @@ export async function ingestSalesCsv(db, csvText, saleDate, fileName) {
       const cents = unitPrice != null ? Math.round(unitPrice * 100) % 100 : null;
       const isClean = cents === 99 || cents === 49 || cents === 0;
       const priceSource = isClean ? 'register' : 'estimated';
-      const { department, sub_category, category } = classifyProduct(item.name, unitPrice || 0);
+      const { department, sub_category, category } = classifyProduct(item.name, unitPrice || 0, upc);
       const is_top_shelf = isTopShelfItem(item.name, department, sub_category, unitPrice || 0) ? 1 : 0;
       return db.prepare(`
         INSERT INTO products(name, clean_name, size, category, sub_category, department, is_top_shelf, price, price_source)

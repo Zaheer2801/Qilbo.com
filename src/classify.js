@@ -77,7 +77,7 @@ export const CANONICAL_BRANDS = [
 
   // Spirits - Vodka
   { brand: "Tito's", group: "Spirits", sub: "Vodka", keys: ["tito's", "titos", "tito"] },
-  { brand: "New Amsterdam", group: "Spirits", sub: "Vodka", keys: ["new amsterdam", "newamsterdam", "newamstersam", "amsterdam vodka"] },
+  { brand: "New Amsterdam", group: "Spirits", sub: "Vodka", keys: ["new amsterdam", "newamsterdam", "newamstersam", "amsterdam vodka", "am grapefruit", "am passion fruit", "am passionfruit"] },
   { brand: "Pink Whitney", group: "Spirits", sub: "Vodka", keys: ["pink whitney", "pinkwhitney"] },
   { brand: "Smirnoff", group: "Spirits", sub: "Vodka", keys: ["smirnoff", "smirnoff vodka"] },
   { brand: "Ciroc", group: "Spirits", sub: "Vodka", keys: ["ciroc"] },
@@ -168,6 +168,8 @@ export const CANONICAL_BRANDS = [
   { brand: "DeKuyper", group: "Spirits", sub: "Liqueur", keys: ["dekuyper", "peachtree"] },
   { brand: "Hpnotiq", group: "Spirits", sub: "Liqueur", keys: ["hpnotiq", "hypnotiq"] },
   { brand: "RumChata", group: "Spirits", sub: "Liqueur", keys: ["rumchata"] },
+  { brand: "XXL", group: "Spirits", sub: "Liqueur", keys: ["xxl flavored", "xxl blackberry", "xxl mango", "xxl apple", "xxl pineapple", "xxl cherry", "xxl strawberry", "xxl peach", "xxl 21", "xxl sparkling"] },
+  { brand: "Twenty Grand", group: "Spirits", sub: "Liqueur", keys: ["twenty grand", "twentygrand", "twenty grand gold"] },
 
   // Beer & RTD - RTD/Seltzer
   { brand: "Clubtails", group: "Beer & RTD", sub: "RTD/Seltzer", keys: ["clubtails", "club tail", "clubtail", "club tails"] },
@@ -221,7 +223,7 @@ export const CANONICAL_BRANDS = [
   { brand: "Barefoot", group: "Wine", sub: "Wine", keys: ["barefoot", "barefoot bubbly"] },
   { brand: "Carlo Rossi", group: "Wine", sub: "Wine", keys: ["carlo rossi"] },
   { brand: "Franzia", group: "Wine", sub: "Wine", keys: ["franzia"] },
-  { brand: "Stella Rosa", group: "Wine", sub: "Wine", keys: ["stella rosa"] },
+  { brand: "Stella Rosa", group: "Wine", sub: "Wine", keys: ["stella rosa", "stellarosa", "steela rosa", "steelarosa", "stella rosa gold", "steela rosa gold"] },
   { brand: "Yellow Tail", group: "Wine", sub: "Wine", keys: ["yellow tail"] },
   { brand: "Woodbridge", group: "Wine", sub: "Wine", keys: ["woodbridge"] },
   { brand: "Wild Irish Rose", group: "Wine", sub: "Wine", keys: ["wild irish rose"] },
@@ -283,6 +285,9 @@ export const CANONICAL_BRANDS = [
   { brand: "Nescafe", group: "Snacks & Grocery", sub: "Snacks & Grocery", keys: ["nescafe"] },
   { brand: "Mahatma", group: "Snacks & Grocery", sub: "Snacks & Grocery", keys: ["mahatma"] },
   { brand: "Grace", group: "Snacks & Grocery", sub: "Snacks & Grocery", keys: ["grace:cock", "grace curry powder", "grace:browning"] },
+  { brand: "Royal Honey", group: "Snacks & Grocery", sub: "Snacks & Grocery", keys: ["royal honey", "royalhoney"] },
+  { brand: "Rhino", group: "Snacks & Grocery", sub: "Snacks & Grocery", keys: ["rhino gold", "rhino 10000", "rhino platinum"] },
+  { brand: "Dirty Potato Chips", group: "Snacks & Grocery", sub: "Snacks & Grocery", keys: ["dirty potato", "dirty chips"] },
 
   // Tobacco
   { brand: "Marlboro", group: "Tobacco", sub: "Cigarettes", keys: ["marlboro"] },
@@ -291,10 +296,11 @@ export const CANONICAL_BRANDS = [
   { brand: "Camel", group: "Tobacco", sub: "Cigarettes", keys: ["camel"] },
   { brand: "Seneca", group: "Tobacco", sub: "Cigarettes", keys: ["seneca"] },
   { brand: "Native", group: "Tobacco", sub: "Cigarettes", keys: ["native green", "native 100s", "native light blue"] },
-  { brand: "Lucky Strike", group: "Tobacco", sub: "Cigarettes", keys: ["lucky strike"] },
+  { brand: "Lucky Strike", group: "Tobacco", sub: "Cigarettes", keys: ["lucky strike", "luckystrike"] },
   { brand: "American Spirit", group: "Tobacco", sub: "Cigarettes", keys: ["american spirit"] },
   { brand: "Backwoods", group: "Tobacco", sub: "Cigars/Cigarillos", keys: ["backwood", "backwoods"] },
   { brand: "Black & Mild", group: "Tobacco", sub: "Cigars/Cigarillos", keys: ["black & mild", "black and mild"] },
+  { brand: "4K", group: "Tobacco", sub: "Cigars/Cigarillos", keys: ["4k black", "4k sweet", "4k cigar", "4k black daimond", "4k black diamond"] },
   { brand: "Swisher", group: "Tobacco", sub: "Cigars/Cigarillos", keys: ["swisher", "swisher sweets"] },
   { brand: "Dutch Masters", group: "Tobacco", sub: "Cigars/Cigarillos", keys: ["dutch master", "dutch masters", "dutch "] },
   { brand: "Game", group: "Tobacco", sub: "Cigars/Cigarillos", keys: ["game cigar", "game leaf"] },
@@ -325,9 +331,9 @@ export function classifyProductFull({ name, cleanName = '', department = '', bra
   const rawText = `${name || ''} ${cleanName || ''} ${brand || ''}`.toLowerCase();
   const compactText = normStr(rawText);
 
-  // 1. Lottery check
-  if (rawText.includes('lottery') || rawText.includes('lotto') || rawText.includes('scratch') || rawText.startsWith('sc-')) {
-    return { group: 'Lottery', sub_category: 'Lottery', brand: 'Florida Lottery', confidence: 0.99, reason: 'Lottery keywords' };
+  // 1. NRS Department: Lottery (Lottery must ONLY come from NRS lottery department or 798028 UPCs, NEVER from name matching)
+  if (department && /lottery/i.test(department)) {
+    return { group: 'Lottery', sub_category: 'Lottery', brand: 'Florida Lottery', confidence: 0.99, reason: 'NRS Lottery department' };
   }
 
   // 2. Exact or substring match on canonical brands (from longest key to shortest)
@@ -461,7 +467,7 @@ export function classifyProductFull({ name, cleanName = '', department = '', bra
 
 export function classifyNewProduct({ name, cleanName = '', department = '', brand = '', unitPrice = 0, upc = '' }) {
   const normU = String(upc || '').replace(/\D/g, '');
-  if (normU.startsWith('798028') || /(payout|scratch|lotto|lottery)/i.test(name)) {
+  if (normU.startsWith('798028') || (department && /lottery/i.test(department))) {
     return { category: 'Lottery', sub_category: 'Lottery', brand: 'Florida Lottery', department: 'Lottery' };
   }
   const res = classifyProductFull({ name, cleanName, department, brand, unitPrice });

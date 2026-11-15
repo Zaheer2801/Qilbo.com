@@ -82,9 +82,13 @@ async function runTests() {
   console.log("  Hennessy is_top_shelf:", top1);
   if (!top1) throw new Error("Hennessy should be top shelf");
 
-  const c2 = classifyProduct("Scratchers Wild 9s", 5.0);
-  console.log("  Wild 9s -> Dept:", c2.department, "| Cat:", c2.category);
-  if (c2.category !== "Lottery") throw new Error("Lottery classification failed");
+  const c2 = classifyProduct("Scratchers Wild 9s", 5.0, "798028123456");
+  console.log("  Wild 9s (with 798028 UPC) -> Dept:", c2.department, "| Cat:", c2.category);
+  if (c2.category !== "Lottery") throw new Error("Lottery classification failed with 798028 UPC");
+
+  const c2_name_only = classifyProduct("Scratchers Wild 9s", 5.0);
+  console.log("  Wild 9s (name only, no lottery dept/UPC) -> Cat:", c2_name_only.category);
+  if (c2_name_only.category === "Lottery") throw new Error("Name matching alone must NEVER classify as Lottery!");
   console.log("  -> ✅ Classification rules verified.\n");
 
   // Setup In-Memory D1 Database with merged data + v2 categories/brands + schema

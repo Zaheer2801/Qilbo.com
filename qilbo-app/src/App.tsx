@@ -42,23 +42,23 @@ const TABS = [
 ];
 
 const SIDEBAR_CATEGORIES = [
-  { name: "Spirits", count: 536 },
-  { name: "Beer & RTD", count: 279 },
-  { name: "Drinks & Mixers", count: 332 },
-  { name: "Tobacco", count: 168 },
-  { name: "Snacks & Grocery", count: 100 },
+  { name: "Spirits", count: 555 },
+  { name: "Beer & RTD", count: 277 },
+  { name: "Drinks & Mixers", count: 330 },
+  { name: "Tobacco", count: 166 },
+  { name: "Snacks & Grocery", count: 96 },
   { name: "Wine", count: 71 },
-  { name: "Lottery", count: 54 },
-  { name: "Vodka", count: 145 },
+  { name: "Lottery", count: 45 },
+  { name: "Vodka", count: 147 },
   { name: "Whiskey", count: 121 },
-  { name: "Tequila/Mezcal", count: 103 },
+  { name: "Tequila/Mezcal", count: 102 },
   { name: "Beer", count: 168 },
-  { name: "RTD/Seltzer", count: 111 },
+  { name: "RTD/Seltzer", count: 109 },
   { name: "Cognac/Brandy", count: 61 },
-  { name: "Liqueur", count: 35 },
+  { name: "Liqueur", count: 44 },
   { name: "Rum", count: 33 },
   { name: "Gin", count: 22 },
-  { name: "Other Spirits – review", count: 16 },
+  { name: "Other Spirits – review", count: 25 },
 ];
 
 const SIDEBAR_DISTRIBUTORS = [

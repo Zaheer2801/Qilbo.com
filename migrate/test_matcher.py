@@ -3,20 +3,22 @@ import sqlite3, re
 con = sqlite3.connect('.wrangler/state/v3/d1/miniflare-D1DatabaseObject/9925c04bd7ea3b0affe4411c7bcbd6ba9e4907d2a17ad0fd2d4a2f660155cd6b.sqlite')
 cur = con.cursor()
 
-# Known brand catalogue
+# Known brand catalogue (Lottery strictly excluded - Lottery must NEVER come from name matching)
 known_brands = cur.execute('''
 SELECT brand, category, sub_category, count(*) as cnt
 FROM products
-WHERE brand IS NOT NULL AND sub_category != 'Other Spirits – review'
+WHERE brand IS NOT NULL AND sub_category != 'Other Spirits – review' AND category != 'Lottery'
 GROUP BY brand, category, sub_category
 ORDER BY cnt DESC
 ''').fetchall()
+
+EXCLUDED_GENERIC_WORDS = {'black', 'gold', 'lucky', 'money'}
 
 # Brand dict: normalized name -> {brand, category, sub_category}
 brand_map = {}
 for b, cat, sub, cnt in known_brands:
     norm = re.sub(r'[^a-z0-9]', '', b.lower())
-    if norm and norm not in brand_map:
+    if norm and norm not in EXCLUDED_GENERIC_WORDS and norm not in brand_map:
         brand_map[norm] = {'brand': b, 'category': cat, 'sub_category': sub}
 
 # Add special known canonicals mentioned by user or common in inventory

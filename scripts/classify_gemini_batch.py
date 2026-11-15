@@ -2,7 +2,6 @@ import sqlite3
 import json
 import urllib.request
 import urllib.error
-import ssl
 import re
 
 # Load GEMINI_API_KEY from .dev.vars
@@ -67,7 +66,6 @@ BATCH_SIZE = 50
 batches = [unmatched[i:i + BATCH_SIZE] for i in range(0, len(unmatched), BATCH_SIZE)]
 print(f"Number of Gemini batches: {len(batches)}")
 
-ctx = ssl._create_unverified_context()
 model = "gemini-3.5-flash"
 
 SYSTEM_PROMPT = """You are an expert liquor, beer, wine, beverage, and grocery retail taxonomy assistant for a liquor and convenience store in Florida.
@@ -138,7 +136,7 @@ for idx, batch in enumerate(batches, 1):
                 headers={'Content-Type': 'application/json'}
             )
             try:
-                with urllib.request.urlopen(req, context=ctx) as resp:
+                with urllib.request.urlopen(req) as resp:
                     data = json.loads(resp.read().decode())
                     usage = data.get('usageMetadata', {})
                     p_tok = usage.get('promptTokenCount', 0)
