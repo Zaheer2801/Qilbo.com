@@ -58,26 +58,36 @@ export const pname = p => {
 
 export const money = n => n == null ? '–' : '$' + Number(n).toFixed(2);
 
-const HELP = `<b>🥃 Discount Liquor Bot</b>
-Just type normally, e.g. <i>how many Don Julio 750 do I have?</i> or <i>I have 4 Don Julio Reposado 750</i>.
+// Six big buttons replace the long command list. Every old command still works for anyone who knows it.
+const MENU = [
+  [{ text: '🧠 What to fix' }, { text: "📊 Yesterday's sales" }],
+  [{ text: '📦 Running low' }, { text: '🛒 What to order' }],
+  [{ text: '🧾 Invoices' }, { text: '🖥 Dashboard' }]
+];
+const BUTTONS = {
+  '🧠 what to fix': '/brain',
+  "📊 yesterday's sales": '/sales',
+  '📦 running low': '/low',
+  '🛒 what to order': '/orders',
+  '🧾 invoices': '/invoices',
+  '🖥 dashboard': '/dashboard'
+};
+export const MENU_MARKUP = { reply_markup: { keyboard: MENU, resize_keyboard: true, is_persistent: true } };
 
-<b>Commands:</b>
-/stock don julio 750 – stock for matching items
-/count 4 don julio reposado 750 – set shelf count
-/adjust -1 hennessy 375 broken – add/remove bottles
-/price 59.99 don julio 750 – set pre-tax shelf price
-/noreorder hennessy iced tea – toggle do not reorder
-/sales – yesterday's sales (/sales week or /sales 2026-11-05)
-/brain – what Qilbo found to fix (/brain run to check now)
-/low – items out of stock or to reorder
-/orders – distributor order suggestions
-/po – view draft purchase orders (/po add 2 cases don julio blanco 750)
-/invoices – recent distributor invoices
-/undo – reverse your last count/adjust/price change
-/dashboard – link to web dashboard
+const HELP = `<b>🥃 Discount Liquor</b>
+Tap a button below, or just type like you'd text a person:
+• <i>how many Don Julio 750 do I have?</i>
+• <i>I counted 4 Hennessy 375</i>
+• <i>sales this week</i>
 
-📎 <b>Send an invoice PDF or photo</b> – I extract it and ask before saving.
-📎 <b>Send a Daily Sales Report CSV</b> – I load the day's sales.`;
+📎 Send a photo or PDF of an invoice and I'll read it for you.`;
+
+const COMMAND_LIST = [
+  { command: 'menu', description: 'Show the buttons' },
+  { command: 'brain', description: 'What to fix today' },
+  { command: 'sales', description: "Yesterday's sales" },
+  { command: 'low', description: 'Running low' }
+];
 
 export async function handleUpdate(env, update, ctx) {
   if (update.callback_query) return onButton(env, update.callback_query);
@@ -95,8 +105,10 @@ export async function handleUpdate(env, update, ctx) {
     const text = (msg.text || msg.caption || '').trim();
     if (!text) return;
     await log(env, 'user', text);
+    const tapped = BUTTONS[text.toLowerCase()];
+    if (tapped) return await onCommand(env, chatId, tapped);
     if (text.startsWith('/')) return await onCommand(env, chatId, text);
-    if (!env.GEMINI_API_KEY) return send(env, chatId, 'AI is not set up yet – use the commands:\n\n' + HELP);
+    if (!env.GEMINI_API_KEY) return send(env, chatId, 'AI is not set up yet – tap a button below.', MENU_MARKUP);
 
     await tg(env, 'sendChatAction', { chat_id: chatId, action: 'typing' });
     const history = await recentHistory(env);
@@ -106,7 +118,7 @@ export async function handleUpdate(env, update, ctx) {
       await send(env, chatId, esc(answer));
     } catch (e) {
       console.error('[Gemini AI Error]', e);
-      await send(env, chatId, 'AI is unavailable right now – commands like /stock still work');
+      await send(env, chatId, 'AI is unavailable right now – the buttons below still work.', MENU_MARKUP);
       await alertGeminiFailure(env, e);
     }
   } catch (e) {
@@ -137,7 +149,10 @@ async function onCommand(env, chatId, text) {
   const arg = rest.join(' ');
   const db = env.DB;
 
-  if (cmd === '/start' || cmd === '/help') return send(env, chatId, HELP);
+  if (cmd === '/start' || cmd === '/help' || cmd === '/menu') {
+    await tg(env, 'setMyCommands', { commands: COMMAND_LIST }).catch(() => {});
+    return send(env, chatId, HELP, MENU_MARKUP);
+  }
   if (cmd === '/dashboard') return send(env, chatId, `Dashboard: ${env.PUBLIC_URL || '(set PUBLIC_URL)'}/`);
 
   if (cmd === '/stock') {
