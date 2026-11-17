@@ -1,5 +1,6 @@
 // Discount Liquor – Cloudflare Worker Entry & API Router
 import { runBrain, listFindings, findingsSummary, decide, briefText } from './brain.js';
+import { joinPage, saveSignup, signupAlert, listStores, decideStore } from './signup.js';
 import {
   inventory,
   salesSummary,
@@ -67,6 +68,22 @@ export default {
     }
 
     try {
+      // 0. New store sign-up (public): the onboarding page and its form
+      if (p === '/join' && req.method === 'GET') {
+        return new Response(joinPage(env.SITE_URL || 'https://qilbo.pages.dev'), { headers: { 'content-type': 'text/html; charset=utf-8' } });
+      }
+      if (p === '/api/public/signup' && req.method === 'POST') {
+        let body;
+        try { body = await req.json(); } catch { return json({ ok: false, errors: ['Bad request'] }, 400); }
+        const r = await saveSignup(env.DB, body || {}, req.headers.get('cf-connecting-ip') || '');
+        if (r.ok && r.id && env.OWNER_CHAT_ID) {
+          ctx.waitUntil(send(env, env.OWNER_CHAT_ID, signupAlert(r), { reply_markup: { inline_keyboard: [[
+            { text: '✅ Start pilot', callback_data: `sa:${r.id}` }, { text: '✖️ Decline', callback_data: `sd:${r.id}` }
+          ]] } }).catch(() => {}));
+        }
+        return json(r.ok ? { ok: true, code: r.code } : r, r.ok ? 200 : 400);
+      }
+
       // 1. Telegram Webhook
       if (p === '/telegram' && req.method === 'POST') {
         if (req.headers.get('x-telegram-bot-api-secret-token') !== env.TELEGRAM_WEBHOOK_SECRET) {
@@ -345,6 +362,11 @@ async function handleApi(req, env, url, ctx) {
   const db = env.DB;
   const p = url.pathname;
   const q = url.searchParams;
+
+  // Stores that signed up through /join
+  if (p === '/api/stores' && req.method === 'GET') return json({ stores: await listStores(db) });
+  const sm = p.match(/^\/api\/stores\/(\d+)\/(approve|decline)$/);
+  if (sm && req.method === 'POST') return json(await decideStore(db, sm[1], sm[2]));
 
   // Qilbo brain: findings from the nightly checks
   if (p === '/api/brain' && req.method === 'GET') {
@@ -806,6 +828,7 @@ function loginPage(bad = false) {
       <input type="password" name="password" placeholder="Dashboard password" autofocus required />
       <button type="submit">Sign in</button>
     </form>
+    <p style="margin:16px 0 0;text-align:center"><a href="/join" style="color:#93c5fd;text-decoration:none">New store? Register for Qilbo →</a></p>
   </div>
 </body>
 </html>`;

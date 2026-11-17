@@ -29,6 +29,7 @@ import InventoryTab from "./components/dashboard/InventoryTab";
 import InvoicesTab from "./components/dashboard/InvoicesTab";
 import OrdersTab from "./components/dashboard/OrdersTab";
 import BrainTab from "./components/dashboard/BrainTab";
+import StoresTab from "./components/dashboard/StoresTab";
 
 // Floating Chat & Logo
 import QilboChatbot from "./components/dashboard/QilboChatbot";
@@ -42,6 +43,7 @@ const TABS = [
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "invoices", label: "Invoices", icon: Receipt },
   { id: "orders", label: "Orders", icon: Truck },
+  { id: "stores", label: "Stores", icon: Store },
 ];
 
 const SIDEBAR_CATEGORIES = [
@@ -442,6 +444,7 @@ export default function App() {
 
           {activeTab === "orders" && <OrdersTab />}
           {activeTab === "brain" && <BrainTab />}
+          {activeTab === "stores" && <StoresTab />}
         </main>
       </div>
 

@@ -66,7 +66,20 @@ export type BrainResponse = {
   last_run: { started_at: string; raised: number; refreshed: number; closed: number; errors: string | null } | null;
 };
 
+export type StoreSignup = {
+  id: number; code: string | null; name: string; store_type: string; status: "pending" | "pilot" | "active" | "declined";
+  owner_name: string | null; phone: string | null; email: string | null; address: string | null; city: string | null; state: string | null; zip: string | null;
+  pos: string | null; created_at: string; decided_at: string | null;
+  profile: { distributors?: string[]; distributors_other?: string; registers?: number | null; sales_range?: string | null; report_email?: string | null;
+    margin_goals?: Record<string, number>; problems?: string[]; alerts?: string[]; best_time?: string; notes?: string };
+};
+
 export const api = {
+  // Stores that registered through /join
+  getStores: (): Promise<{ stores: StoreSignup[] }> => request(`/api/stores`),
+  decideStore: (id: number, decision: "approve" | "decline"): Promise<{ id: number; status: string }> =>
+    request(`/api/stores/${id}/${decision}`, { method: "POST" }),
+
   // Qilbo brain
   getBrain: (status = "open,approved"): Promise<BrainResponse> => request<BrainResponse>(`/api/brain?status=${encodeURIComponent(status)}`),
   runBrain: (): Promise<{ raised: number; refreshed: number; closed: number; total: number; errors: string[] }> =>

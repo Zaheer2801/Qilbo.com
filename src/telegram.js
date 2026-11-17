@@ -16,6 +16,7 @@ import {
 } from './db.js';
 import { askAssistant, extractInvoice } from './ai.js';
 import { decide, runBrain, briefText } from './brain.js';
+import { decideStore } from './signup.js';
 import { stageInvoice, postInvoice, ingestSalesCsv, dateFromFilename } from './ingest.js';
 
 const API = (env, m) => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${m}`;
@@ -584,6 +585,15 @@ async function onButton(env, q) {
     const r = await postInvoice(env.DB, Number(id));
     await tg(env, 'editMessageReplyMarkup', { chat_id: chatId, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
     return send(env, chatId, r.already ? 'Already saved.' : `✅ Saved: ${r.lines} lines added to inventory${r.new_products ? `, ${r.new_products} new products created` : ''}.`);
+  }
+  if (act === 'sa' || act === 'sd') {
+    const r = await decideStore(env.DB, Number(id), act === 'sa' ? 'approve' : 'decline').catch((e) => ({ error: e.message }));
+    await tg(env, 'editMessageReplyMarkup', { chat_id: chatId, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
+    if (r.error) return send(env, chatId, `Couldn't update that store: ${esc(r.error)}`);
+    const st = await env.DB.prepare('SELECT code, name, owner_name, phone FROM stores WHERE id=?').bind(Number(id)).first();
+    return send(env, chatId, act === 'sa'
+      ? `✅ <b>${esc(st?.name)}</b> (${esc(st?.code)}) is now a pilot store. Call ${esc(st?.owner_name)} at ${esc(st?.phone)} to set a start date.`
+      : `✖️ Declined ${esc(st?.name)} (${esc(st?.code)}).`);
   }
   if (act === 'fa' || act === 'fs') {
     const r = await decide(env.DB, Number(id), act === 'fa' ? 'approve' : 'skip').catch((e) => ({ error: e.message }));
