@@ -91,6 +91,8 @@ export default function StoresTab() {
                 <Item k="Margin goals" v={s.profile.margin_goals ? Object.entries(s.profile.margin_goals).map(([c, v]) => `${c} ${v}%`).join(" · ") : null} />
                 <Item k="Biggest pains" v={(s.profile.problems || []).join(" · ")} />
                 <Item k="Morning brief" v={(s.profile.alerts || []).join(", ")} />
+                <Item k="Wants" v={s.profile.intent === "demo" ? "A demo first" : "The pilot"} />
+                <Item k="Signed up on" v={s.profile.source} />
                 <Item k="Best time" v={s.profile.best_time} />
                 <Item k="Notes" v={s.profile.notes} />
               </dl>

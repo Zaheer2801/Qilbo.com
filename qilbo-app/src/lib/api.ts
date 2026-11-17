@@ -71,7 +71,7 @@ export type StoreSignup = {
   owner_name: string | null; phone: string | null; email: string | null; address: string | null; city: string | null; state: string | null; zip: string | null;
   pos: string | null; created_at: string; decided_at: string | null;
   profile: { distributors?: string[]; distributors_other?: string; registers?: number | null; sales_range?: string | null; report_email?: string | null;
-    margin_goals?: Record<string, number>; problems?: string[]; alerts?: string[]; best_time?: string; notes?: string };
+    margin_goals?: Record<string, number>; problems?: string[]; alerts?: string[]; best_time?: string; notes?: string; intent?: string; source?: string };
 };
 
 export const api = {

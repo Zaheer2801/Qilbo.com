@@ -64,6 +64,8 @@ export async function saveSignup(db, body, ip = '') {
     alerts: pickList(body.alerts, ALERTS.filter((a) => !/coming soon/.test(a))),
     best_time: clean(body.best_time, 40),
     notes: clean(body.notes, 500),
+    intent: body.intent === 'demo' ? 'demo' : 'pilot',
+    source: body.source === 'website' ? 'website' : 'join page',
     agreed_at: new Date().toISOString(),
   };
   const typeKey = /liquor/i.test(s.store_type) ? 'liquor' : /conven/i.test(s.store_type) ? 'convenience' : /smoke/i.test(s.store_type) ? 'smoke' : 'mixed';
@@ -94,7 +96,7 @@ function safe(s) { try { return s ? JSON.parse(s) : {}; } catch { return {}; } }
 export function signupAlert(r) {
   const p = r.store.profile;
   return [
-    `🆕 <b>New store signed up</b> · ${r.code}`,
+    `🆕 <b>${p.intent === 'demo' ? 'Demo request' : 'New store signed up'}</b> · ${r.code}${p.source === 'website' ? ' · from the website' : ''}`,
     `<b>${esc(r.store.name)}</b> (${esc(r.store.store_type)})`,
     `${esc([r.store.address, r.store.city, r.store.state, r.store.zip].filter(Boolean).join(', '))}`,
     `👤 ${esc(r.store.owner_name)} · 📞 ${esc(r.store.phone)}${r.store.email ? ' · ' + esc(r.store.email) : ''}`,
