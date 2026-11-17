@@ -402,14 +402,16 @@ export async function decide(db, id, decision, store = STORE) {
 }
 
 // The morning brief: the few findings worth acting on today, as Telegram HTML.
-export async function briefText(db, { max = 6, store = STORE } = {}) {
-  const list = (await listFindings(db, { status: 'open', limit: 50, store })).filter((f) => f.severity <= 2);
+export async function briefText(db, { max = 6, store = STORE, engine, maxSeverity = 2 } = {}) {
+  const list = (await listFindings(db, { status: 'open', limit: 50, store, engine })).filter((f) => f.severity <= maxSeverity);
   const sum = await findingsSummary(db, store);
-  if (!list.length) return { text: '🧠 <b>Qilbo brain:</b> nothing new to fix today. 👌', items: [] };
+  if (!list.length) return { text: engine ? '🧠 Nothing to fix here right now. 👌' : '🧠 <b>Qilbo brain:</b> nothing new to fix today. 👌', items: [] };
   const top = list.slice(0, max);
   const lines = top.map((f, i) => `${i + 1}. ${f.severity === 1 ? '🔴' : '🟡'} <b>${esc(f.title)}</b>\n   ${esc(f.action || '')}`);
   const text = [
-    `🧠 <b>Qilbo found ${list.length} thing${list.length > 1 ? 's' : ''} to fix</b>${sum.value_open ? ` (about ${money(sum.value_open)} a month at stake)` : ''}:`,
+    engine
+      ? `🧠 <b>${({ price: '💲 Prices', invoice: '🧾 Invoices', stock: '📦 Stock' })[engine] || engine}: ${list.length} thing${list.length > 1 ? 's' : ''} to fix</b>`
+      : `🧠 <b>Qilbo found ${list.length} thing${list.length > 1 ? 's' : ''} to fix</b>${sum.value_open ? ` (about ${money(sum.value_open)} a month at stake)` : ''}:`,
     '',
     ...lines,
     list.length > max ? `\n<i>…and ${list.length - max} more in the dashboard (Brain tab).</i>` : '',

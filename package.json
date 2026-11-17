@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "node test/ledger.test.js && node test/backend.test.js && node test/phase4_po_and_filters.test.js && node test/category_review.test.js && node test/brain.test.js",
+    "test": "node test/ledger.test.js && node test/backend.test.js && node test/phase4_po_and_filters.test.js && node test/category_review.test.js && node test/brain.test.js && node test/telegram_menu.test.js",
     "sync:sample": "python3 -m nrs_pipeline.sync_engine",
     "sync:gmail": "python3 -m nrs_pipeline.sync_engine --fetch-gmail",
     "sync:all": "python3 -m nrs_pipeline.batch_fetch_all",

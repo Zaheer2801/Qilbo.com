@@ -60,17 +60,18 @@ export const money = n => n == null ? '–' : '$' + Number(n).toFixed(2);
 
 // Six big buttons replace the long command list. Every old command still works for anyone who knows it.
 const MENU = [
-  [{ text: '🧠 What to fix' }, { text: "📊 Yesterday's sales" }],
+  [{ text: '🧠 What to fix' }, { text: '📊 Sales' }],
   [{ text: '📦 Running low' }, { text: '🛒 What to order' }],
   [{ text: '🧾 Invoices' }, { text: '🖥 Dashboard' }]
 ];
 const BUTTONS = {
-  '🧠 what to fix': '/brain',
-  "📊 yesterday's sales": '/sales',
-  '📦 running low': '/low',
-  '🛒 what to order': '/orders',
-  '🧾 invoices': '/invoices',
-  '🖥 dashboard': '/dashboard'
+  '🧠 what to fix': 'fix',
+  "📊 yesterday's sales": 'sales',
+  '📊 sales': 'sales',
+  '📦 running low': 'low',
+  '🛒 what to order': 'order',
+  '🧾 invoices': 'invoices',
+  '🖥 dashboard': 'dashboard'
 };
 export const MENU_MARKUP = { reply_markup: { keyboard: MENU, resize_keyboard: true, is_persistent: true } };
 
@@ -106,7 +107,14 @@ export async function handleUpdate(env, update, ctx) {
     if (!text) return;
     await log(env, 'user', text);
     const tapped = BUTTONS[text.toLowerCase()];
-    if (tapped) return await onCommand(env, chatId, tapped);
+    if (tapped) { await setSetting(env.DB, 'tg_waiting', ''); return await openMenu(env, chatId, tapped); }
+    // Waiting for typed dates after "Pick dates"
+    const waiting = await getSetting(env.DB, 'tg_waiting', '');
+    if (waiting && !text.startsWith('/')) {
+      const range = parseRange(text);
+      if (range) { await setSetting(env.DB, 'tg_waiting', ''); return await showRange(env, chatId, waiting, range[0], range[1]); }
+      if (/^\s*(cancel|stop|no)\s*$/i.test(text)) { await setSetting(env.DB, 'tg_waiting', ''); return send(env, chatId, 'OK, cancelled.'); }
+    }
     if (text.startsWith('/')) return await onCommand(env, chatId, text);
     if (!env.GEMINI_API_KEY) return send(env, chatId, 'AI is not set up yet – tap a button below.', MENU_MARKUP);
 
@@ -409,11 +417,168 @@ export function invoicePreview(st) {
   ].join('\n');
 }
 
+// ---------- button menus: each main button opens a small set of choices ----------
+const kb = (rows) => ({ reply_markup: { inline_keyboard: rows } });
+const b = (text, data) => ({ text, callback_data: String(data).slice(0, 64) });
+
+async function distributors(db) {
+  return (await db.prepare(`SELECT distributor d, COUNT(*) n FROM invoices WHERE distributor IS NOT NULL AND distributor <> ''
+      GROUP BY distributor ORDER BY MAX(invoice_date) DESC LIMIT 6`).all()).results.map((r) => r.d);
+}
+const two = (arr) => arr.reduce((rows, x, i) => (i % 2 ? rows[rows.length - 1].push(x) : rows.push([x]), rows), []);
+
+async function openMenu(env, chatId, which) {
+  const db = env.DB;
+  if (which === 'dashboard') return send(env, chatId, `🖥 Your dashboard: ${env.PUBLIC_URL || ''}/`);
+  if (which === 'sales') return send(env, chatId, '📊 <b>Sales for…</b>', kb([
+    [b('Today', 'ms:today'), b('Yesterday', 'ms:yesterday')],
+    [b('Last 7 days', 'ms:7d'), b('Last 30 days', 'ms:30d')],
+    [b('This month', 'ms:month'), b('Last month', 'ms:lastmonth')],
+    [b('📅 Pick dates', 'ms:custom')]
+  ]));
+  if (which === 'invoices') {
+    const ds = await distributors(db);
+    return send(env, chatId, '🧾 <b>Invoices</b>', kb([
+      [b('Latest 10', 'mi:recent'), b('⏳ Waiting for review', 'mi:pending')],
+      [b('This month', 'mi:month'), b('📅 Pick dates', 'mi:custom')],
+      ...two(ds.map((d) => b(d, 'mid:' + d)))
+    ]));
+  }
+  if (which === 'low') {
+    const ds = await distributors(db);
+    return send(env, chatId, '📦 <b>Stock</b>', kb([
+      [b('🔴 Out of stock', 'ml:out'), b('🟡 Running low', 'ml:low')],
+      [b('Both', 'ml:all'), b('💤 Not selling', 'ml:dead')],
+      ...two(ds.map((d) => b(d, 'mld:' + d)))
+    ]));
+  }
+  if (which === 'order') {
+    const sug = (await distributorOrderSuggestions(db)).filter((d) => d.total_cases > 0);
+    if (!sug.length) return send(env, chatId, '🛒 Nothing needs ordering right now. 👍');
+    return send(env, chatId, '🛒 <b>Order from…</b>', kb([
+      ...two(sug.map((d) => b(`${d.distributor} · ${d.total_cases} cs`, 'mo:' + d.distributor))),
+      [b('All distributors', 'mo:*')]
+    ]));
+  }
+  if (which === 'fix') {
+    const brief = await briefText(db, { max: 6 });
+    await sendFindings(env, chatId, brief);
+    return send(env, chatId, 'Show only…', kb([
+      [b('💲 Prices', 'mf:price'), b('🧾 Invoices', 'mf:invoice')],
+      [b('📦 Stock', 'mf:stock'), b('🔄 Check again now', 'mf:run')]
+    ]));
+  }
+}
+
+async function sendFindings(env, chatId, brief) {
+  const keyboard = brief.items.map((f, i) => ([b(`✅ ${i + 1} Approve`, `fa:${f.id}`), b(`⏭ ${i + 1} Skip`, `fs:${f.id}`)]));
+  return send(env, chatId, brief.text, keyboard.length ? kb(keyboard) : {});
+}
+
+function monthStart(ymd) { return ymd.slice(0, 8) + '01'; }
+function lastMonth(ymd) {
+  const d = new Date(ymd.slice(0, 8) + '01T12:00:00Z'); d.setUTCDate(0);
+  const end = d.toISOString().slice(0, 10);
+  return [end.slice(0, 8) + '01', end];
+}
+
+// "11/01 to 11/15", "nov 1 - nov 15", "2026-11-01 2026-11-15", or one date
+export function parseRange(text, today = todayLocal()) {
+  const y = Number(today.slice(0, 4));
+  const months = { jan: 1, feb: 2, mar: 3, apr: 4, may: 5, jun: 6, jul: 7, aug: 8, sep: 9, oct: 10, nov: 11, dec: 12 };
+  const found = [];
+  const t = String(text).toLowerCase();
+  for (const m of t.matchAll(/(\d{4})-(\d{1,2})-(\d{1,2})|(\d{1,2})\/(\d{1,2})(?:\/(\d{2,4}))?|([a-z]{3})[a-z]*\.?\s+(\d{1,2})(?:,?\s*(\d{4}))?/g)) {
+    let yy, mm, dd;
+    if (m[1]) { yy = +m[1]; mm = +m[2]; dd = +m[3]; }
+    else if (m[4]) { mm = +m[4]; dd = +m[5]; yy = m[6] ? (m[6].length === 2 ? 2000 + +m[6] : +m[6]) : y; }
+    else if (months[m[7]]) { mm = months[m[7]]; dd = +m[8]; yy = m[9] ? +m[9] : y; }
+    else continue;
+    if (mm < 1 || mm > 12 || dd < 1 || dd > 31) continue;
+    found.push(`${yy}-${String(mm).padStart(2, '0')}-${String(dd).padStart(2, '0')}`);
+  }
+  if (!found.length) return null;
+  const [s, e] = [found[0], found[1] || found[0]].sort();
+  return [s, e];
+}
+
+async function showRange(env, chatId, what, s, e) {
+  const db = env.DB;
+  if (what === 'sales') return send(env, chatId, formatSales(await salesSummary(db, s, e)));
+  if (what === 'invoices') return listInvoices(env, chatId, 'invoice_date BETWEEN ? AND ?', [s, e], `🧾 <b>Invoices ${s} → ${e}</b>`);
+}
+
+async function listInvoices(env, chatId, where, binds, title) {
+  const rows = (await env.DB.prepare(`SELECT distributor, invoice_no, invoice_date, total, status FROM invoices WHERE ${where}
+      ORDER BY COALESCE(invoice_date, created_at) DESC LIMIT 25`).bind(...binds).all()).results;
+  if (!rows.length) return send(env, chatId, `${title}
+None found.`);
+  const total = rows.reduce((a, r) => a + (r.total || 0), 0);
+  return send(env, chatId, `${title}
+` + rows.map((r) => `• ${r.invoice_date || ''} ${esc(r.distributor || '')} #${esc(r.invoice_no || '')} ${money(r.total)} ${r.status === 'posted' ? '✅' : '⏳'}`).join('\n') +
+    `\n\n<b>Total:</b> ${money(total)} (${rows.length} invoice${rows.length > 1 ? 's' : ''})`);
+}
+
+async function stockList(env, chatId, filter, title) {
+  const rows = (await inventory(env.DB, { onlyTracked: true })).filter(filter).sort((a, b) => (a.weeks_left ?? 0) - (b.weeks_left ?? 0));
+  if (!rows.length) return send(env, chatId, `${title}
+Nothing here right now. 👍`);
+  return send(env, chatId, `${title}
+` + rows.slice(0, 40).map((r) => `• ${esc(pname(r))} – <b>${Math.max(0, r.on_hand ?? 0)}</b> left${(r.on_hand ?? 0) < 0 ? ' (count it, the shelf count is off)' : ''}${r.per_week ? ` (~${r.per_week}/wk)` : ''}${r.distributor ? ' · ' + esc(r.distributor) : ''}`).join('\n') +
+    (rows.length > 40 ? `\n<i>…and ${rows.length - 40} more in the dashboard.</i>` : ''));
+}
+
+async function onMenuButton(env, chatId, act, val) {
+  const db = env.DB;
+  const today = todayLocal(), y = addDays(today, -1);
+  if (act === 'ms') {
+    if (val === 'custom') { await setSetting(db, 'tg_waiting', 'sales'); return send(env, chatId, '📅 Type the dates, like <i>11/01 to 11/15</i> or <i>Nov 3</i>.'); }
+    const r = { today: [today, today], yesterday: [y, y], '7d': [addDays(y, -6), y], '30d': [addDays(y, -29), y], month: [monthStart(today), today], lastmonth: lastMonth(today) }[val];
+    if (r) return send(env, chatId, formatSales(await salesSummary(db, r[0], r[1])));
+  }
+  if (act === 'mi') {
+    if (val === 'custom') { await setSetting(db, 'tg_waiting', 'invoices'); return send(env, chatId, '📅 Type the dates, like <i>11/01 to 11/15</i>.'); }
+    if (val === 'recent') return listInvoices(env, chatId, '1=1', [], '🧾 <b>Latest invoices</b>');
+    if (val === 'pending') return listInvoices(env, chatId, "status <> 'posted'", [], '⏳ <b>Waiting for your review</b>');
+    if (val === 'month') return listInvoices(env, chatId, 'invoice_date >= ?', [monthStart(today)], '🧾 <b>Invoices this month</b>');
+  }
+  if (act === 'mid') return listInvoices(env, chatId, 'distributor = ? AND invoice_date >= ?', [val, addDays(today, -90)], `🧾 <b>${esc(val)}, last 90 days</b>`);
+  if (act === 'ml') {
+    if (val === 'out') return stockList(env, chatId, (r) => r.status === 'OUT', '🔴 <b>Out of stock</b>');
+    if (val === 'low') return stockList(env, chatId, (r) => r.status === 'REORDER', '🟡 <b>Running low</b>');
+    if (val === 'all') return stockList(env, chatId, (r) => r.status === 'OUT' || r.status === 'REORDER', '📦 <b>Out and running low</b>');
+    if (val === 'dead') return stockList(env, chatId, (r) => r.status === 'NOT SELLING' && (r.on_hand ?? 0) > 0, '💤 <b>Not selling (no sales in 60 days)</b>');
+  }
+  if (act === 'mld') return stockList(env, chatId, (r) => (r.status === 'OUT' || r.status === 'REORDER') && r.distributor === val, `📦 <b>${esc(val)}: out and running low</b>`);
+  if (act === 'mo') {
+    const sug = (await distributorOrderSuggestions(db)).filter((d) => d.total_cases > 0 && (val === '*' || d.distributor === val));
+    const lines = [];
+    for (const d of sug) {
+      lines.push(`🛒 <b>${esc(d.distributor)}</b>: ${d.total_cases} cases (${money(d.total_cost)})`);
+      if (d.minimum_rule) lines.push(`Min: ${d.minimum_rule} ${d.meets_minimum ? '✅' : '⚠️ below minimum'}`);
+      lines.push(...d.items.slice(0, 25).map((it) => `• ${it.cases_suggested} cs ${esc(it.name)} ${it.size || ''} (${money(it.line_total)})`));
+      lines.push('');
+    }
+    return send(env, chatId, lines.join('\n') || 'Nothing to order there right now. 👍');
+  }
+  if (act === 'mf') {
+    if (val === 'run') { await send(env, chatId, '🔄 Checking everything…'); await runBrain(db); return sendFindings(env, chatId, await briefText(db, { max: 8 })); }
+    return sendFindings(env, chatId, await briefText(db, { max: 8, engine: val, maxSeverity: 3 }));
+  }
+}
+
 async function onButton(env, q) {
   const chatId = q.message?.chat?.id;
   if (String(chatId) !== String(env.OWNER_CHAT_ID)) return;
-  const [act, id] = String(q.data || '').split(':');
+  const raw = String(q.data || '');
+  const cut = raw.indexOf(':');
+  const act = cut < 0 ? raw : raw.slice(0, cut);
+  const id = cut < 0 ? '' : raw.slice(cut + 1);
   await tg(env, 'answerCallbackQuery', { callback_query_id: q.id });
+  if (/^m[a-z]{1,2}$/.test(act)) {
+    try { return await onMenuButton(env, chatId, act, id); }
+    catch (e) { return send(env, chatId, '⚠️ ' + esc(e.message || e)); }
+  }
 
   if (act === 'post') {
     const r = await postInvoice(env.DB, Number(id));
