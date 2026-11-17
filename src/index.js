@@ -1,4 +1,5 @@
 // Discount Liquor – Cloudflare Worker Entry & API Router
+import { runBrain, listFindings, findingsSummary, decide, briefText } from './brain.js';
 import {
   inventory,
   salesSummary,
@@ -319,7 +320,21 @@ export default {
         text += `\n\n⏳ <b>${pend.n} invoice(s) waiting for your review.</b>`;
       }
 
-      ctx.waitUntil(send(env, env.OWNER_CHAT_ID, text));
+      ctx.waitUntil((async () => {
+        await send(env, env.OWNER_CHAT_ID, text);
+        // Qilbo brain: run the checks on yesterday's data, then send what to fix with Approve / Skip buttons
+        try {
+          await runBrain(env.DB);
+          const brief = await briefText(env.DB);
+          const keyboard = brief.items.map((f, i) => ([
+            { text: `✅ ${i + 1} Approve`, callback_data: `fa:${f.id}` },
+            { text: `⏭ ${i + 1} Skip`, callback_data: `fs:${f.id}` }
+          ]));
+          await send(env, env.OWNER_CHAT_ID, brief.text, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {});
+        } catch (err) {
+          await send(env, env.OWNER_CHAT_ID, `⚠️ Qilbo brain check failed: ${esc(String(err.message || err))}`);
+        }
+      })());
       return;
     }
   }
@@ -330,6 +345,23 @@ async function handleApi(req, env, url, ctx) {
   const db = env.DB;
   const p = url.pathname;
   const q = url.searchParams;
+
+  // Qilbo brain: findings from the nightly checks
+  if (p === '/api/brain' && req.method === 'GET') {
+    const [items, summary, run] = await Promise.all([
+      listFindings(db, { status: q.get('status') || 'open,approved', engine: q.get('engine') || undefined, limit: Number(q.get('limit') || 200) }),
+      findingsSummary(db),
+      db.prepare('SELECT * FROM brain_runs ORDER BY id DESC LIMIT 1').first()
+    ]);
+    return json({ items, summary, last_run: run });
+  }
+  if (p === '/api/brain/run' && req.method === 'POST') {
+    return json(await runBrain(db));
+  }
+  const dm = p.match(/^\/api\/brain\/(\d+)\/(approve|skip|reopen)$/);
+  if (dm && req.method === 'POST') {
+    return json(await decide(db, dm[1], dm[2]));
+  }
 
   // GET /api/summary
   if (p === '/api/summary') {

@@ -15,6 +15,7 @@ import {
   Sun,
   Moon,
   Sparkles,
+  Brain,
 } from "lucide-react";
 import type { ApiSummaryResponse, AppState } from "./types";
 import { api } from "./lib/api";
@@ -27,6 +28,7 @@ import DailySalesTab from "./components/dashboard/DailySalesTab";
 import InventoryTab from "./components/dashboard/InventoryTab";
 import InvoicesTab from "./components/dashboard/InvoicesTab";
 import OrdersTab from "./components/dashboard/OrdersTab";
+import BrainTab from "./components/dashboard/BrainTab";
 
 // Floating Chat & Logo
 import QilboChatbot from "./components/dashboard/QilboChatbot";
@@ -35,6 +37,7 @@ import ReviewCategoriesModal from "./components/dashboard/ReviewCategoriesModal"
 
 const TABS = [
   { id: "overview", label: "Overview", icon: LayoutDashboard },
+  { id: "brain", label: "Brain", icon: Brain },
   { id: "dailysales", label: "Daily Sales", icon: BarChart3 },
   { id: "inventory", label: "Inventory", icon: Package },
   { id: "invoices", label: "Invoices", icon: Receipt },
@@ -438,6 +441,7 @@ export default function App() {
           {activeTab === "invoices" && <InvoicesTab />}
 
           {activeTab === "orders" && <OrdersTab />}
+          {activeTab === "brain" && <BrainTab />}
         </main>
       </div>
 

@@ -54,7 +54,26 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 }
 
+export type BrainFinding = {
+  id: number; key: string; engine: string; type: string; severity: number; product_id: number | null;
+  title: string; detail: string | null; action: string | null; value: number; data: Record<string, unknown>;
+  status: "open" | "approved" | "skipped" | "verified" | "cleared"; first_seen: string; last_seen: string;
+  decided_at: string | null; resolved_at: string | null;
+};
+export type BrainResponse = {
+  items: BrainFinding[];
+  summary: { open: number; approved: number; verified: number; value_open: number; value_verified: number; by_engine: Record<string, Record<string, number>> };
+  last_run: { started_at: string; raised: number; refreshed: number; closed: number; errors: string | null } | null;
+};
+
 export const api = {
+  // Qilbo brain
+  getBrain: (status = "open,approved"): Promise<BrainResponse> => request<BrainResponse>(`/api/brain?status=${encodeURIComponent(status)}`),
+  runBrain: (): Promise<{ raised: number; refreshed: number; closed: number; total: number; errors: string[] }> =>
+    request(`/api/brain/run`, { method: "POST" }),
+  decideFinding: (id: number, decision: "approve" | "skip" | "reopen"): Promise<{ id: number; status: string }> =>
+    request(`/api/brain/${id}/${decision}`, { method: "POST" }),
+
   // Login / Logout
   login: async (password: string): Promise<boolean> => {
     const res = await fetch("/login", {

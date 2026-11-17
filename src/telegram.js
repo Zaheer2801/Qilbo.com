@@ -15,6 +15,7 @@ import {
   addToDraftPO
 } from './db.js';
 import { askAssistant, extractInvoice } from './ai.js';
+import { decide, runBrain, briefText } from './brain.js';
 import { stageInvoice, postInvoice, ingestSalesCsv, dateFromFilename } from './ingest.js';
 
 const API = (env, m) => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${m}`;
@@ -67,6 +68,7 @@ Just type normally, e.g. <i>how many Don Julio 750 do I have?</i> or <i>I have 4
 /price 59.99 don julio 750 – set pre-tax shelf price
 /noreorder hennessy iced tea – toggle do not reorder
 /sales – yesterday's sales (/sales week or /sales 2026-11-05)
+/brain – what Qilbo found to fix (/brain run to check now)
 /low – items out of stock or to reorder
 /orders – distributor order suggestions
 /po – view draft purchase orders (/po add 2 cases don julio blanco 750)
@@ -223,6 +225,16 @@ async function onCommand(env, chatId, text) {
     else if (/month/.test(arg)) s = addDays(y, -29);
     else if (/today/.test(arg)) s = e = todayLocal();
     return send(env, chatId, formatSales(await salesSummary(db, s, e)));
+  }
+
+  if (cmd === '/brain') {
+    if (/run/.test(arg)) await runBrain(db);
+    const brief = await briefText(db, { max: 8 });
+    const keyboard = brief.items.map((f, i) => ([
+      { text: `✅ ${i + 1} Approve`, callback_data: `fa:${f.id}` },
+      { text: `⏭ ${i + 1} Skip`, callback_data: `fs:${f.id}` }
+    ]));
+    return send(env, chatId, brief.text, keyboard.length ? { reply_markup: { inline_keyboard: keyboard } } : {});
   }
 
   if (cmd === '/low') {
@@ -392,6 +404,14 @@ async function onButton(env, q) {
     const r = await postInvoice(env.DB, Number(id));
     await tg(env, 'editMessageReplyMarkup', { chat_id: chatId, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
     return send(env, chatId, r.already ? 'Already saved.' : `✅ Saved: ${r.lines} lines added to inventory${r.new_products ? `, ${r.new_products} new products created` : ''}.`);
+  }
+  if (act === 'fa' || act === 'fs') {
+    const r = await decide(env.DB, Number(id), act === 'fa' ? 'approve' : 'skip').catch((e) => ({ error: e.message }));
+    if (r.error) return send(env, chatId, `Couldn't update that one: ${r.error}`);
+    const f = await env.DB.prepare('SELECT title FROM findings WHERE id=?').bind(Number(id)).first();
+    return send(env, chatId, act === 'fa'
+      ? `✅ Approved: ${f?.title || 'finding'}. I'll check tomorrow's sales to confirm it's fixed.`
+      : `⏭ Skipped: ${f?.title || 'finding'}.`);
   }
   if (act === 'drop') {
     await env.DB.batch([
