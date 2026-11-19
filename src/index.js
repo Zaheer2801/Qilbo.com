@@ -1,6 +1,8 @@
 // Discount Liquor – Cloudflare Worker Entry & API Router
 import { runBrain, listFindings, findingsSummary, decide, briefText } from './brain.js';
 import { joinPage, saveSignup, signupAlert, listStores, decideStore } from './signup.js';
+import { storeByToken, storeByCode, saveStoreFile, onboarding, recentFiles, intakePage, pctOf, storeEmail, ensureToken, setupUrl, KINDS } from './intake.js';
+import { botUsername } from './telegram.js';
 import {
   inventory,
   salesSummary,
@@ -82,6 +84,53 @@ export default {
           ]] } }).catch(() => {}));
         }
         return json(r.ok ? { ok: true, code: r.code } : r, r.ok ? 200 : 400);
+      }
+
+      // 0b. A pilot store's private setup page: upload files, connect Telegram, see progress
+      const sp = p.match(/^\/s\/([\w-]{16,64})(?:\/(upload|status|done))?\/?$/);
+      if (sp) {
+        const store = await storeByToken(env.DB, sp[1]);
+        if (!store) return new Response('This setup link is not active. Ask Qilbo for a new one.', { status: 404, headers: { 'content-type': 'text/plain; charset=utf-8' } });
+        const action = sp[2] || '';
+        if (!action && req.method === 'GET') {
+          const [ob, files, botUser] = await Promise.all([onboarding(env.DB, store), recentFiles(env.DB, store.id), botUsername(env).catch(() => '')]);
+          return new Response(intakePage(store, ob, files, { botUser, email: storeEmail(env.INTAKE_INBOX, store.code), publicSite: env.SITE_URL || 'https://qilbo.pages.dev' }),
+            { headers: { 'content-type': 'text/html; charset=utf-8', 'x-robots-tag': 'noindex', 'referrer-policy': 'no-referrer', 'cache-control': 'no-store' } });
+        }
+        if (action === 'status' && req.method === 'GET') {
+          const [ob, files] = await Promise.all([onboarding(env.DB, store), recentFiles(env.DB, store.id)]);
+          return json({ ok: true, ...ob, pct: pctOf(ob), files });
+        }
+        if (action === 'upload' && req.method === 'POST') {
+          let form;
+          try { form = await req.formData(); } catch { return json({ ok: false, error: 'Bad upload' }, 400); }
+          const file = form.get('file');
+          if (!file || typeof file === 'string') return json({ ok: false, error: 'No file' }, 400);
+          const r = await saveStoreFile(env, store, { bytes: new Uint8Array(await file.arrayBuffer()), name: file.name, mime: file.type, kind: String(form.get('kind') || ''), source: 'upload' });
+          return json(r, r.ok ? 200 : 400);
+        }
+        if (action === 'done' && req.method === 'POST') {
+          const body = await req.json().catch(() => ({}));
+          const n = Math.max(0, Math.min(999, Number(body.count) || 0));
+          if (n && env.OWNER_CHAT_ID) {
+            const ob = await onboarding(env.DB, store);
+            ctx.waitUntil(send(env, env.OWNER_CHAT_ID, `📥 <b>${esc(store.name)}</b> (${esc(store.code)}) uploaded ${n} file${n > 1 ? 's' : ''}. Setup ${pctOf(ob)}% done.${ob.ready ? '\n✅ Enough for a first brief.' : ''}`).catch(() => {}));
+          }
+          return json({ ok: true });
+        }
+        return json({ ok: false, error: 'Not found' }, 404);
+      }
+
+      // 0c. Email intake for pilot stores (pushed by the StoreInbox Apps Script)
+      if (p === '/ingest/store' && req.method === 'POST') {
+        if (!env.INGEST_KEY || req.headers.get('x-ingest-key') !== env.INGEST_KEY) return json({ error: 'unauthorized' }, 401);
+        const store = await storeByCode(env.DB, url.searchParams.get('code'));
+        if (!store) return json({ ok: false, error: 'No active store with that code' }, 404);
+        const r = await saveStoreFile(env, store, {
+          bytes: new Uint8Array(await req.arrayBuffer()), name: url.searchParams.get('file') || 'email_attachment',
+          mime: (req.headers.get('content-type') || '').split(';')[0], kind: url.searchParams.get('kind') || '', source: 'email', date: url.searchParams.get('date') || null,
+        });
+        return json(r, r.ok ? 200 : 400);
       }
 
       // 1. Telegram Webhook
@@ -364,7 +413,19 @@ async function handleApi(req, env, url, ctx) {
   const q = url.searchParams;
 
   // Stores that signed up through /join
-  if (p === '/api/stores' && req.method === 'GET') return json({ stores: await listStores(db) });
+  if (p === '/api/stores' && req.method === 'GET') {
+    const base = env.APP_URL || url.origin;
+    const stores = await listStores(db);
+    for (const s of stores) {
+      if (s.id === 1 || !['pilot', 'active'].includes(s.status)) continue;
+      const tok = s.intake_token || await ensureToken(db, s.id);
+      s.setup_url = setupUrl(base, tok);
+      s.onboarding = await onboarding(db, { ...s, intake_token: tok });
+      s.onboarding.pct = pctOf(s.onboarding);
+      s.files = await recentFiles(db, s.id, 8);
+    }
+    return json({ stores: stores.map(({ intake_token, tg_chat_id, ...r }) => ({ ...r, tg_connected: !!tg_chat_id })) });
+  }
   const sm = p.match(/^\/api\/stores\/(\d+)\/(approve|decline)$/);
   if (sm && req.method === 'POST') return json(await decideStore(db, sm[1], sm[2]));
 

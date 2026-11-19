@@ -4,7 +4,7 @@
   "version": "1.0.0",
   "type": "module",
   "scripts": {
-    "test": "node test/ledger.test.js && node test/backend.test.js && node test/phase4_po_and_filters.test.js && node test/category_review.test.js && node test/brain.test.js && node test/telegram_menu.test.js && node test/signup.test.js",
+    "test": "node test/ledger.test.js && node test/backend.test.js && node test/phase4_po_and_filters.test.js && node test/category_review.test.js && node test/brain.test.js && node test/telegram_menu.test.js && node test/signup.test.js && node test/intake.test.js",
     "sync:sample": "python3 -m nrs_pipeline.sync_engine",
     "sync:gmail": "python3 -m nrs_pipeline.sync_engine --fetch-gmail",
     "sync:all": "python3 -m nrs_pipeline.batch_fetch_all",
@@ -13,7 +13,8 @@
     "web": "cd qilbo-app && npm run dev",
     "build": "cd qilbo-app && npm run build",
     "migrate:brain": "wrangler d1 execute discount-liquor --remote --file=migrate/v6_brain_findings.sql",
-    "migrate:stores": "wrangler d1 execute discount-liquor --remote --file=migrate/v7_store_signups.sql"
+    "migrate:stores": "wrangler d1 execute discount-liquor --remote --file=migrate/v7_store_signups.sql",
+    "migrate:intake": "wrangler d1 execute discount-liquor --remote --file=migrate/v8_store_intake.sql"
   },
   "devDependencies": {
     "puppeteer-core": "^25.16.0",

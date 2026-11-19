@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Store, RefreshCw, CheckCircle2, XCircle, Phone, Mail, MapPin, Copy, Check } from "lucide-react";
+import { Store, RefreshCw, CheckCircle2, XCircle, Phone, Mail, MapPin, Copy, Check, Circle, ExternalLink } from "lucide-react";
 import { api, type StoreSignup } from "../../lib/api";
 
 // Stores that registered through the /join onboarding page. Approving makes them a pilot store.
@@ -83,6 +83,7 @@ export default function StoresTab() {
                 </div>
               )}
             </div>
+            {s.onboarding && s.setup_url && <Setup s={s} />}
             {s.id !== 1 && (
               <dl className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 text-sm mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
                 <Item k="POS" v={[s.pos, s.profile.registers ? `${s.profile.registers} register(s)` : null, s.profile.report_email ? `daily report email: ${s.profile.report_email}` : null].filter(Boolean).join(" · ")} />
@@ -108,4 +109,44 @@ export default function StoresTab() {
 function Item({ k, v }: { k: string; v?: string | null }) {
   if (!v) return null;
   return (<div className="flex gap-2 min-w-0"><dt className="text-slate-400 shrink-0 w-28">{k}</dt><dd className="text-slate-700 dark:text-slate-200 min-w-0">{v}</dd></div>);
+}
+
+const KIND_LABEL: Record<string, string> = { items: "Item list", sales: "Sales report", invoice: "Invoice", deals: "Deal sheet", other: "Other" };
+
+// Onboarding progress for a pilot store, plus the private setup link to send the owner
+function Setup({ s }: { s: StoreSignup }) {
+  const ob = s.onboarding!;
+  const [copied, setCopied] = useState(false);
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(s.setup_url!); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* ignore */ }
+  };
+  return (
+    <div className="mt-3 pt-3 border-t border-dashed border-slate-200 dark:border-slate-800">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-semibold text-slate-800 dark:text-slate-100">
+          Setup {ob.pct}% {ob.ready && <span className="ml-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200 px-2 py-0.5 text-[11px]">Enough for a first brief</span>}
+        </div>
+        <div className="flex gap-2">
+          <button onClick={copy} className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200">
+            {copied ? <Check className="w-3.5 h-3.5 text-emerald-600" /> : <Copy className="w-3.5 h-3.5" />} {copied ? "Copied" : "Copy setup link"}
+          </button>
+          <a href={s.setup_url} target="_blank" rel="noopener" className="inline-flex items-center gap-1.5 rounded-lg border border-slate-200 dark:border-slate-700 px-2.5 py-1 text-xs font-semibold text-slate-700 dark:text-slate-200"><ExternalLink className="w-3.5 h-3.5" /> Open</a>
+        </div>
+      </div>
+      <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 mt-2 overflow-hidden"><div className="h-full bg-blue-600 rounded-full" style={{ width: `${ob.pct}%` }} /></div>
+      <ul className="grid sm:grid-cols-2 gap-x-6 gap-y-1.5 mt-3 text-sm">
+        {ob.steps.map((st) => (
+          <li key={st.key} className="flex gap-2 min-w-0">
+            {st.done ? <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0 mt-0.5" /> : <Circle className="w-4 h-4 text-slate-300 shrink-0 mt-0.5" />}
+            <span className="min-w-0"><span className="font-medium text-slate-800 dark:text-slate-100">{st.title}</span><span className="block text-xs text-slate-500">{st.detail}</span></span>
+          </li>
+        ))}
+      </ul>
+      {!!s.files?.length && (
+        <div className="mt-3 text-xs text-slate-500">
+          Latest: {s.files.slice(0, 4).map((f) => `${KIND_LABEL[f.kind] || f.kind} (${f.source})`).join(" · ")}
+        </div>
+      )}
+    </div>
+  );
 }

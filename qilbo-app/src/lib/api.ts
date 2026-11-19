@@ -72,6 +72,12 @@ export type StoreSignup = {
   pos: string | null; created_at: string; decided_at: string | null;
   profile: { distributors?: string[]; distributors_other?: string; registers?: number | null; sales_range?: string | null; report_email?: string | null;
     margin_goals?: Record<string, number>; problems?: string[]; alerts?: string[]; best_time?: string; notes?: string; intent?: string; source?: string };
+  // Pilot stores only: their private setup link and how far along they are
+  setup_url?: string; tg_connected?: boolean;
+  onboarding?: { pct: number; done: number; total: number; ready: boolean;
+    steps: { key: string; title: string; detail: string; done: boolean; progress?: number }[];
+    counts: { items: number; sales: number; sales_days: number; invoice: number; deals: number; other: number } };
+  files?: { id: number; kind: string; file_name: string; source: string; report_date: string | null; created_at: string }[];
 };
 
 export const api = {

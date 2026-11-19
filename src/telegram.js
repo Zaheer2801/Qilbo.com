@@ -17,6 +17,7 @@ import {
 import { askAssistant, extractInvoice } from './ai.js';
 import { decide, runBrain, briefText } from './brain.js';
 import { decideStore } from './signup.js';
+import { KINDS, linkChat, storeByChat, saveStoreFile, setFileKind, onboarding, checklistText, ensureToken, setupUrl, pctOf } from './intake.js';
 import { stageInvoice, postInvoice, ingestSalesCsv, dateFromFilename } from './ingest.js';
 
 const API = (env, m) => `https://api.telegram.org/bot${env.TELEGRAM_BOT_TOKEN}/${m}`;
@@ -91,8 +92,25 @@ const COMMAND_LIST = [
   { command: 'low', description: 'Running low' }
 ];
 
+// Where setup links point (the worker). PUBLIC_URL is the dashboard address.
+export const appBase = (env) => String(env.APP_URL || env.PUBLIC_URL || 'https://discount-liquor.zshaik2801.workers.dev').replace(/\/$/, '');
+
+// The bot's @username, looked up once and kept in settings (used for t.me links).
+export async function botUsername(env) {
+  const cached = await getSetting(env.DB, 'tg_bot_username', '');
+  if (cached) return cached;
+  const me = await tg(env, 'getMe', {});
+  const u = me?.result?.username || '';
+  if (u) await setSetting(env.DB, 'tg_bot_username', u);
+  return u;
+}
+
 export async function handleUpdate(env, update, ctx) {
-  if (update.callback_query) return onButton(env, update.callback_query);
+  if (update.callback_query) {
+    const cid = update.callback_query.message?.chat?.id;
+    if (env.OWNER_CHAT_ID && String(cid) !== String(env.OWNER_CHAT_ID)) return storeButton(env, update.callback_query);
+    return onButton(env, update.callback_query);
+  }
   const msg = update.message || update.edited_message;
   if (!msg) return;
   const chatId = msg.chat.id;
@@ -100,7 +118,10 @@ export async function handleUpdate(env, update, ctx) {
   if (!env.OWNER_CHAT_ID) {
     return send(env, chatId, `Setup: your Telegram chat id is <code>${chatId}</code>. Save it as OWNER_CHAT_ID.`);
   }
-  if (String(chatId) !== String(env.OWNER_CHAT_ID)) return; // Strictly ignore everyone else
+  // Everyone else can only be a pilot store sending its files (never the owner's data or commands)
+  if (String(chatId) !== String(env.OWNER_CHAT_ID)) {
+    try { return await storeMessage(env, msg); } catch (e) { console.error('store chat error', e); return send(env, chatId, 'Sorry, something went wrong. Please try again.'); }
+  }
 
   try {
     if (msg.document || msg.photo) return await onFile(env, msg);
@@ -590,10 +611,11 @@ async function onButton(env, q) {
     const r = await decideStore(env.DB, Number(id), act === 'sa' ? 'approve' : 'decline').catch((e) => ({ error: e.message }));
     await tg(env, 'editMessageReplyMarkup', { chat_id: chatId, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
     if (r.error) return send(env, chatId, `Couldn't update that store: ${esc(r.error)}`);
-    const st = await env.DB.prepare('SELECT code, name, owner_name, phone FROM stores WHERE id=?').bind(Number(id)).first();
-    return send(env, chatId, act === 'sa'
-      ? `✅ <b>${esc(st?.name)}</b> (${esc(st?.code)}) is now a pilot store. Call ${esc(st?.owner_name)} at ${esc(st?.phone)} to set a start date.`
-      : `✖️ Declined ${esc(st?.name)} (${esc(st?.code)}).`);
+    const st = await env.DB.prepare('SELECT id, code, name, owner_name, phone FROM stores WHERE id=?').bind(Number(id)).first();
+    if (act !== 'sa') return send(env, chatId, `✖️ Declined ${esc(st?.name)} (${esc(st?.code)}).`);
+    const link = setupUrl(appBase(env), await ensureToken(env.DB, st.id));
+    await send(env, chatId, `✅ <b>${esc(st?.name)}</b> (${esc(st?.code)}) is now a pilot store. Call ${esc(st?.owner_name)} at ${esc(st?.phone)} to set a start date.\n\nTheir private setup link:\n${esc(link)}\n\nForward the next message to them by text or WhatsApp 👇`);
+    return send(env, chatId, `Hi ${esc(firstName(st?.owner_name))}, welcome to Qilbo! 🎉\n\nSet up ${esc(st?.name)} here (takes about 10 minutes):\n${esc(link)}\n\n1. Tap “Connect Telegram” so you can send invoices as photos.\n2. Upload your item list from your POS.\n3. Send the last 30 days of sales reports and 2 months of invoices.\n\nYour first list of fixes comes the next morning.`);
   }
   if (act === 'fa' || act === 'fs') {
     const r = await decide(env.DB, Number(id), act === 'fa' ? 'approve' : 'skip').catch((e) => ({ error: e.message }));
@@ -621,4 +643,105 @@ async function recentHistory(env) {
   const rows = (await env.DB.prepare("SELECT role, text FROM chat_log WHERE created_at > datetime('now','-2 hours') ORDER BY id DESC LIMIT 8").all()).results.reverse();
   rows.pop(); // The message we just logged is sent separately
   return rows.map(r => ({ role: r.role === 'user' ? 'user' : 'model', parts: [{ text: r.text }] }));
+}
+
+
+// ---------- Pilot stores: their own chat with the bot ----------
+// A store can only send files and see its own setup checklist. Nothing here reads or changes
+// Discount Liquor's data.
+const STORE_MARKUP = { reply_markup: { keyboard: [[{ text: '📋 My setup' }, { text: '🔗 Upload page' }]], resize_keyboard: true, is_persistent: true } };
+const firstName = (n) => String(n || '').trim().split(/\s+/)[0] || 'there';
+const kindButtons = (fileId, current) => ({ inline_keyboard: [
+  [['items', '🧾 Item list'], ['sales', '📊 Sales report']],
+  [['invoice', '🚚 Invoice'], ['deals', '🏷 Deal sheet']],
+].map((row) => row.map(([k, label]) => ({ text: (k === current ? '✓ ' : '') + label, callback_data: `sk:${fileId}:${k}` }))) });
+function kindFromCaption(c = '') {
+  c = String(c).toLowerCase();
+  if (/invoice|bill/.test(c)) return 'invoice';
+  if (/sales|report/.test(c)) return 'sales';
+  if (/item|product|inventory|price list/.test(c)) return 'items';
+  if (/deal|promo/.test(c)) return 'deals';
+  return '';
+}
+function savedLine(r, ob) {
+  const what = KINDS[r.kind]?.one || 'file';
+  const c = ob.counts;
+  const tally = r.kind === 'sales' ? `${c.sales_days} of 30 days of sales so far.`
+    : r.kind === 'invoice' ? `${c.invoice} invoice${c.invoice === 1 ? '' : 's'} so far.`
+    : r.kind === 'items' ? 'Item list ✓' : '';
+  return `✅ Saved as ${what === 'file' ? 'a file' : (/^[aeiou]/.test(what) ? 'an ' : 'a ') + what}${r.report_date ? ` for ${r.report_date}` : ''}. ${tally}\nSetup ${pctOf(ob)}% done. Wrong type? Tap the right one:`;
+}
+
+async function storeMessage(env, msg) {
+  if (msg.chat?.type && msg.chat.type !== 'private') return;
+  const chatId = msg.chat.id;
+  const db = env.DB;
+  const text = (msg.text || '').trim();
+
+  const start = text.match(/^\/start(?:@\w+)?\s+([\w-]{16,64})$/);
+  if (start) {
+    const st = await linkChat(db, start[1], chatId);
+    if (!st) return send(env, chatId, 'This setup link is not active anymore. Ask Qilbo for a new one.');
+    const ob = await onboarding(db, st);
+    await send(env, chatId, `👋 Welcome to Qilbo, ${esc(firstName(st.owner_name))}! This chat is now connected to <b>${esc(st.name)}</b>.\n\n` + checklistText(st, ob, setupUrl(appBase(env), st.intake_token)), STORE_MARKUP);
+    if (!st.already && env.OWNER_CHAT_ID) await send(env, env.OWNER_CHAT_ID, `📲 <b>${esc(st.name)}</b> (${esc(st.code)}) connected Telegram.`).catch(() => {});
+    return;
+  }
+
+  const st = await storeByChat(db, chatId);
+  if (!st) return send(env, chatId, 'Hi! This is the Qilbo bot. To connect your store, open the setup link Qilbo sent you and tap “Connect Telegram”.');
+
+  if (msg.document || msg.photo) return storeFile(env, st, msg);
+
+  const t = text.toLowerCase();
+  const url = setupUrl(appBase(env), st.intake_token);
+  if (t === '📋 my setup' || t === '/status' || t === '/start' || t === '/help' || t === '/setup') {
+    return send(env, chatId, checklistText(st, await onboarding(db, st), url), STORE_MARKUP);
+  }
+  if (t === '🔗 upload page') return send(env, chatId, `Upload many files at once here (works on phone and computer):\n${esc(url)}`, STORE_MARKUP);
+  if (!text) return;
+  // Anything else is a question for the Qilbo team: pass it on.
+  if (env.OWNER_CHAT_ID) await send(env, env.OWNER_CHAT_ID, `💬 <b>${esc(st.name)}</b> (${esc(st.code)}) · ${esc(st.owner_name)} ${esc(st.phone || '')}:\n${esc(text.slice(0, 1500))}`).catch(() => {});
+  return send(env, chatId, 'Thanks! The Qilbo team got your message and will get back to you soon.', STORE_MARKUP);
+}
+
+async function storeFile(env, st, msg) {
+  const chatId = msg.chat.id;
+  const doc = msg.document;
+  const photo = msg.photo ? msg.photo[msg.photo.length - 1] : null;
+  const size = doc?.file_size || photo?.file_size || 0;
+  const url = setupUrl(appBase(env), st.intake_token);
+  if (size > 20 * 1024 * 1024) return send(env, chatId, `Telegram only lets me fetch files up to 20 MB. Please use your upload page instead:\n${esc(url)}`);
+  const f = await tg(env, 'getFile', { file_id: (doc || photo).file_id });
+  if (!f.ok) return send(env, chatId, 'I couldn’t download that file from Telegram. Please send it again.');
+  const res = await fetch(`https://api.telegram.org/file/bot${env.TELEGRAM_BOT_TOKEN}/${f.result.file_path}`);
+  const bytes = new Uint8Array(await res.arrayBuffer());
+  const name = doc?.file_name || `photo_${new Date().toISOString().slice(0, 10)}_${msg.message_id}.jpg`;
+  const mime = doc?.mime_type || 'image/jpeg';
+  const date = (msg.caption || '').match(/\d{4}-\d{2}-\d{2}/)?.[0] || null;
+  const r = await saveStoreFile(env, st, { bytes, name, mime, kind: kindFromCaption(msg.caption), source: 'telegram', date });
+  if (!r.ok) return send(env, chatId, '⚠️ ' + esc(r.error));
+  const ob = await onboarding(env.DB, st);
+  await send(env, chatId, r.kind === 'other' ? `Got it 👍 What is this file?` : savedLine(r, ob), { reply_markup: kindButtons(r.id, r.kind) });
+  // Tell the Qilbo owner once a day per store that files are coming in
+  const key = `intake_seen_${st.id}`, today = todayLocal();
+  if (env.OWNER_CHAT_ID && (await getSetting(env.DB, key, '')) !== today) {
+    await setSetting(env.DB, key, today);
+    await send(env, env.OWNER_CHAT_ID, `📥 <b>${esc(st.name)}</b> (${esc(st.code)}) is sending files on Telegram. Setup ${pctOf(ob)}% done.`).catch(() => {});
+  }
+}
+
+async function storeButton(env, q) {
+  const chatId = q.message?.chat?.id;
+  await tg(env, 'answerCallbackQuery', { callback_query_id: q.id }).catch(() => {});
+  const st = await storeByChat(env.DB, chatId);
+  const m = String(q.data || '').match(/^sk:(\d+):(\w+)$/);
+  if (!st || !m) return;
+  try {
+    const f = await setFileKind(env.DB, st.id, Number(m[1]), m[2]);
+    const ob = await onboarding(env.DB, st);
+    await tg(env, 'editMessageText', { chat_id: chatId, message_id: q.message.message_id, text: savedLine(f, ob), reply_markup: kindButtons(f.id, f.kind) });
+  } catch (e) {
+    return send(env, chatId, '⚠️ ' + esc(e.message || e));
+  }
 }
