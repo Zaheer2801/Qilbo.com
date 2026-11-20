@@ -193,7 +193,8 @@ export async function findLabelItems(db, query, limit = 36) {
   const words = q.split(/\s+/).filter((w) => w && !/^\d+(\.\d+)?(ml|l|oz)?$/.test(w) && !['ml', 'oz', 'the', 'of', 'label', 'labels', 'for'].includes(w));
   if (!words.length) return [];
   const where = words.map(() => "lower(replace(name, '''', '')) LIKE ?").join(' AND ');
-  let rows = (await db.prepare(`SELECT p.*, (SELECT upc FROM product_upcs u WHERE u.product_id = p.id LIMIT 1) AS upc
+  let rows = (await db.prepare(`SELECT p.*, (SELECT upc FROM product_upcs u WHERE u.product_id = p.id LIMIT 1) AS upc,
+      (SELECT MAX(sale_date) FROM sales s WHERE s.product_id = p.id) AS last_sold
     FROM products p WHERE ${where} AND active = 1 ORDER BY name LIMIT 200`).bind(...words.map((w) => `%${w.replace(/'/g, '')}%`)).all()).results;
   // whole words only: "gin" must not match "ginger"; plurals and long prefixes are fine
   const tokens = (name) => ascii(name).toLowerCase().replace(/'/g, '').split(/[^a-z0-9.]+/);
@@ -222,6 +223,7 @@ export function toLabelItem(r) {
     upc: upc12(r.upc),
     code: String(r.id).padStart(4, '0'),
     cat: String(r.sub_category || r.category || '').toUpperCase(),
+    lastSold: r.last_sold || null,
   };
 }
 

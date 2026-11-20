@@ -802,8 +802,10 @@ export async function sendLabels(env, chatId, query, { all = false } = {}) {
   const pdf = labelPdf(items, { date: labelDate(today), title: `Shelf labels: ${query}` });
   const lines = [`🏷 <b>${items.length} label${items.length > 1 ? 's' : ''}</b> · ${esc(query)} · ${Math.ceil(items.length / 12)} A4 page${items.length > 12 ? 's' : ''}`,
     'Print at 100% (“Actual size”), then cut on the marks.'];
-  const guessed = items.filter((i) => i.priceSource === 'estimated');
-  if (guessed.length) lines.push(`⚠️ Check these prices with your register first: ${guessed.map((i) => `${esc(i.raw)} $${Number(i.price).toFixed(2)}`).join('; ')}`);
+  // A price is only sure if you set it, or the register showed it in the last 3 weeks of sales
+  const stale = addDays(today, -21);
+  const guessed = items.filter((i) => i.priceSource === 'estimated' || (i.priceSource === 'register' && (!i.lastSold || i.lastSold < stale)));
+  if (guessed.length) lines.push(`⚠️ Check these prices with your register first (guessed, or not sold in 3 weeks): ${guessed.slice(0, 12).map((i) => `${esc(i.raw)} $${Number(i.price).toFixed(2)}`).join('; ')}${guessed.length > 12 ? ` …and ${guessed.length - 12} more` : ''}`);
   lines.push('Price wrong? Fix it, then ask again: <i>/price 18.99 seagram 750</i>');
   const noUpc = items.filter((i) => !i.upc).length;
   if (noUpc) lines.push(`${noUpc} label${noUpc > 1 ? 's have' : ' has'} no barcode (no UPC on file yet).`);
