@@ -71,6 +71,8 @@ function cleanName(p) {
     .replace(/\b(pint|pet|bt|btl|12b|sb)\b/gi, '')                                     // POS shorthand
     .replace(/\b(50|100|200|375|750|1000|1750)\s*$/g, '')                              // size left at the end
     .replace(/\bREPASADO\b/gi, 'REPOSADO').replace(/\bTEQ\b/gi, 'TEQUILA').replace(/\bSLVR\b/gi, 'SILVER')
+    .replace(/\bGROOSE\b/gi, 'GOOSE').replace(/\bGRAY GOOSE\b/gi, 'GREY GOOSE').replace(/\bHANDMAE\b/gi, 'HANDMADE').replace(/\bTANGIRINE\b/gi, 'TANGERINE')
+    .replace(/\s+\d\s*$/, '')                                                         // stray digit at the end
     .replace(/[:;,]+\s*$/, '').replace(/\s{2,}/g, ' ').trim();
   return n.toUpperCase();
 }
