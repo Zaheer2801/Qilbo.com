@@ -17,6 +17,7 @@ import {
 import { askAssistant, extractInvoice } from './ai.js';
 import { decide, runBrain, briefText } from './brain.js';
 import { decideStore } from './signup.js';
+import { labelPdf, findLabelItems, labelDate } from './labels.js';
 import { KINDS, linkChat, storeByChat, saveStoreFile, setFileKind, onboarding, checklistText, ensureToken, setupUrl, pctOf } from './intake.js';
 import { stageInvoice, postInvoice, ingestSalesCsv, dateFromFilename } from './ingest.js';
 
@@ -64,7 +65,8 @@ export const money = n => n == null ? '–' : '$' + Number(n).toFixed(2);
 const MENU = [
   [{ text: '🧠 What to fix' }, { text: '📊 Sales' }],
   [{ text: '📦 Running low' }, { text: '🛒 What to order' }],
-  [{ text: '🧾 Invoices' }, { text: '🖥 Dashboard' }]
+  [{ text: '🧾 Invoices' }, { text: '🏷 Labels' }],
+  [{ text: '🖥 Dashboard' }]
 ];
 const BUTTONS = {
   '🧠 what to fix': 'fix',
@@ -73,6 +75,7 @@ const BUTTONS = {
   '📦 running low': 'low',
   '🛒 what to order': 'order',
   '🧾 invoices': 'invoices',
+  '🏷 labels': 'labels',
   '🖥 dashboard': 'dashboard'
 };
 export const MENU_MARKUP = { reply_markup: { keyboard: MENU, resize_keyboard: true, is_persistent: true } };
@@ -83,13 +86,15 @@ Tap a button below, or just type like you'd text a person:
 • <i>I counted 4 Hennessy 375</i>
 • <i>sales this week</i>
 
-📎 Send a photo or PDF of an invoice and I'll read it for you.`;
+📎 Send a photo or PDF of an invoice and I'll read it for you.
+🏷 Shelf labels: tap Labels, or type <i>labels hennessy</i>.`;
 
 const COMMAND_LIST = [
   { command: 'menu', description: 'Show the buttons' },
   { command: 'brain', description: 'What to fix today' },
   { command: 'sales', description: "Yesterday's sales" },
-  { command: 'low', description: 'Running low' }
+  { command: 'low', description: 'Running low' },
+  { command: 'labels', description: 'Shelf labels, e.g. /labels seagram gin' }
 ];
 
 // Where setup links point (the worker). PUBLIC_URL is the dashboard address.
@@ -132,6 +137,13 @@ export async function handleUpdate(env, update, ctx) {
     if (tapped) { await setSetting(env.DB, 'tg_waiting', ''); return await openMenu(env, chatId, tapped); }
     // Waiting for typed dates after "Pick dates"
     const waiting = await getSetting(env.DB, 'tg_waiting', '');
+    if (waiting === 'labels' && !text.startsWith('/')) {
+      await setSetting(env.DB, 'tg_waiting', '');
+      if (/^\s*(cancel|stop|no)\s*$/i.test(text)) return send(env, chatId, 'OK, cancelled.');
+      return await sendLabels(env, chatId, text);
+    }
+    const lbl = text.match(/^(?:\/labels?(?:@\w+)?|labels?|tags?)\s+(.+)$/i);
+    if (lbl) return await sendLabels(env, chatId, lbl[1]);
     if (waiting && !text.startsWith('/')) {
       const range = parseRange(text);
       if (range) { await setSetting(env.DB, 'tg_waiting', ''); return await showRange(env, chatId, waiting, range[0], range[1]); }
@@ -183,6 +195,7 @@ async function onCommand(env, chatId, text) {
     await tg(env, 'setMyCommands', { commands: COMMAND_LIST }).catch(() => {});
     return send(env, chatId, HELP, MENU_MARKUP);
   }
+  if (cmd === '/labels' || cmd === '/label') return arg ? sendLabels(env, chatId, arg) : openMenu(env, chatId, 'labels');
   if (cmd === '/dashboard') return send(env, chatId, `Dashboard: ${env.PUBLIC_URL || '(set PUBLIC_URL)'}/`);
 
   if (cmd === '/stock') {
@@ -451,6 +464,10 @@ const two = (arr) => arr.reduce((rows, x, i) => (i % 2 ? rows[rows.length - 1].p
 
 async function openMenu(env, chatId, which) {
   const db = env.DB;
+  if (which === 'labels') {
+    await setSetting(db, 'tg_waiting', 'labels');
+    return send(env, chatId, '🏷 <b>Shelf labels</b>\nWhich items? Type a brand or product, like <i>seagram gin</i> or <i>hennessy</i>.\nAdd a size to narrow it: <i>hennessy 375</i>.');
+  }
   if (which === 'dashboard') return send(env, chatId, `🖥 Your dashboard: ${env.PUBLIC_URL || ''}/`);
   if (which === 'sales') return send(env, chatId, '📊 <b>Sales for…</b>', kb([
     [b('Today', 'ms:today'), b('Yesterday', 'ms:yesterday')],
@@ -602,6 +619,12 @@ async function onButton(env, q) {
     catch (e) { return send(env, chatId, '⚠️ ' + esc(e.message || e)); }
   }
 
+  if (act === 'lb') {
+    const query = await getSetting(env.DB, 'tg_label_q', '');
+    if (!query) return send(env, chatId, 'Type the items again: tap 🏷 Labels.');
+    return sendLabels(env, chatId, query, { all: true });
+  }
+
   if (act === 'post') {
     const r = await postInvoice(env.DB, Number(id));
     await tg(env, 'editMessageReplyMarkup', { chat_id: chatId, message_id: q.message.message_id, reply_markup: { inline_keyboard: [] } });
@@ -744,4 +767,49 @@ async function storeButton(env, q) {
   } catch (e) {
     return send(env, chatId, '⚠️ ' + esc(e.message || e));
   }
+}
+
+
+// ---------- Shelf labels ----------
+const LABELS_MAX = 36;   // 3 A4 pages
+export async function sendDocument(env, chatId, bytes, filename, caption = '', extra = {}) {
+  const fd = new FormData();
+  fd.append('chat_id', String(chatId));
+  fd.append('document', new Blob([bytes], { type: 'application/pdf' }), filename);
+  if (caption) { fd.append('caption', caption.slice(0, 1024)); fd.append('parse_mode', 'HTML'); }
+  for (const [k, v] of Object.entries(extra)) fd.append(k, typeof v === 'string' ? v : JSON.stringify(v));
+  const r = await fetch(API(env, 'sendDocument'), { method: 'POST', body: fd });
+  return r.json();
+}
+
+export async function sendLabels(env, chatId, query, { all = false } = {}) {
+  query = String(query || '').trim().slice(0, 80);
+  const found = await findLabelItems(env.DB, query, 200);
+  const priced = found.filter((i) => i.price != null && Number(i.price) > 0);
+  const noPrice = found.filter((i) => !(i.price != null && Number(i.price) > 0));
+  if (!found.length) return send(env, chatId, `🏷 No items found for "<b>${esc(query)}</b>". Try fewer words, like <i>seagram</i>.`);
+  if (!priced.length) return send(env, chatId, `🏷 Found ${found.length} item${found.length > 1 ? 's' : ''} for "${esc(query)}", but none has a price yet. Ring one up once, or set the price, then try again.`);
+  if (priced.length > 12 && !all) {
+    await setSetting(env.DB, 'tg_label_q', query);
+    const shown = priced.slice(0, 15).map((i) => `• ${esc(i.raw)} · $${Number(i.price).toFixed(2)}`).join('\n');
+    const n = Math.min(priced.length, LABELS_MAX);
+    return send(env, chatId, `🏷 <b>${priced.length} items</b> match "${esc(query)}":\n${shown}${priced.length > 15 ? `\n…and ${priced.length - 15} more` : ''}\n\nType more words to narrow it (like <i>${esc(query)} 375</i>), or print them all.`,
+      { reply_markup: { inline_keyboard: [[{ text: `🖨 Print all ${n}${priced.length > LABELS_MAX ? ` of ${priced.length}` : ''}`, callback_data: 'lb:all' }]] } });
+  }
+  const items = priced.slice(0, LABELS_MAX);
+  await tg(env, 'sendChatAction', { chat_id: chatId, action: 'upload_document' }).catch(() => {});
+  const today = todayLocal();
+  const pdf = labelPdf(items, { date: labelDate(today), title: `Shelf labels: ${query}` });
+  const lines = [`🏷 <b>${items.length} label${items.length > 1 ? 's' : ''}</b> · ${esc(query)} · ${Math.ceil(items.length / 12)} A4 page${items.length > 12 ? 's' : ''}`,
+    'Print at 100% (“Actual size”), then cut on the marks.'];
+  const guessed = items.filter((i) => i.priceSource === 'estimated');
+  if (guessed.length) lines.push(`⚠️ Check these prices with your register first: ${guessed.map((i) => `${esc(i.raw)} $${Number(i.price).toFixed(2)}`).join('; ')}`);
+  lines.push('Price wrong? Fix it, then ask again: <i>/price 18.99 seagram 750</i>');
+  const noUpc = items.filter((i) => !i.upc).length;
+  if (noUpc) lines.push(`${noUpc} label${noUpc > 1 ? 's have' : ' has'} no barcode (no UPC on file yet).`);
+  if (noPrice.length) lines.push(`Skipped (no price): ${noPrice.slice(0, 5).map((i) => esc(i.raw)).join('; ')}${noPrice.length > 5 ? '…' : ''}`);
+  const slug = query.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30) || 'items';
+  const r = await sendDocument(env, chatId, pdf, `labels_${slug}_${today}.pdf`, lines.join('\n'));
+  if (!r?.ok) return send(env, chatId, '⚠️ Couldn’t send the label PDF: ' + esc(r?.description || 'unknown error'));
+  return r;
 }

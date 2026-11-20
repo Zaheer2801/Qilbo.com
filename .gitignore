@@ -20,3 +20,4 @@ test_files/
 *.LOCAL.gs
 
 test/.intake_page.html
+test/.labels_sample.pdf
