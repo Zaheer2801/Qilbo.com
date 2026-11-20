@@ -66,7 +66,12 @@ export function parseSize(p) {
   return null;
 }
 function cleanName(p) {
-  let n = ascii(p.clean_name || p.name || '').replace(/\b\d+(?:\.\d+)?\s*(ml|l|lt|oz|fl\.?\s*oz|pk|pack|ct)\b/gi, '').replace(/\s{2,}/g, ' ').trim();
+  let n = ascii(p.clean_name || p.name || '')
+    .replace(/\b\d+(?:\.\d+)?\s*(ml|m|l|lt|liter|oz|fl\.?\s*oz|pk|pack|ct)\b/gi, '')   // sizes
+    .replace(/\b(pint|pet|bt|btl|12b|sb)\b/gi, '')                                     // POS shorthand
+    .replace(/\b(50|100|200|375|750|1000|1750)\s*$/g, '')                              // size left at the end
+    .replace(/\bREPASADO\b/gi, 'REPOSADO').replace(/\bTEQ\b/gi, 'TEQUILA').replace(/\bSLVR\b/gi, 'SILVER')
+    .replace(/[:;,]+\s*$/, '').replace(/\s{2,}/g, ' ').trim();
   return n.toUpperCase();
 }
 
@@ -197,7 +202,15 @@ export async function findLabelItems(db, query, limit = 36) {
     const sized = rows.filter((r) => { const s = parseSize(r); return s && parseFloat(s.num) === n; });
     if (sized.length) rows = sized;
   }
-  const items = rows.map((r) => ({
+  const items = rows.map(toLabelItem);
+  // biggest bottle first within each product, like a shelf left to right
+  items.sort((a, b) => a.name.localeCompare(b.name) || (b.size?.oz || 0) - (a.size?.oz || 0));
+  return items.slice(0, limit);
+}
+
+// A products row (with an optional upc column) -> a label item
+export function toLabelItem(r) {
+  return {
     id: r.id,
     name: cleanName(r),
     raw: r.name,
@@ -207,10 +220,7 @@ export async function findLabelItems(db, query, limit = 36) {
     upc: upc12(r.upc),
     code: String(r.id).padStart(4, '0'),
     cat: String(r.sub_category || r.category || '').toUpperCase(),
-  }));
-  // biggest bottle first within each product, like a shelf left to right
-  items.sort((a, b) => a.name.localeCompare(b.name) || (b.size?.oz || 0) - (a.size?.oz || 0));
-  return items.slice(0, limit);
+  };
 }
 
 export function labelDate(today) {           // 2026-11-20 -> 11/20/26
